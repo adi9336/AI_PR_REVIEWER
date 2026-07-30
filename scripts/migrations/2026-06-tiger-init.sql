@@ -71,11 +71,33 @@ CREATE TABLE IF NOT EXISTS agent_events (
   payload      JSONB
 );
 
+-- INV-6: an llm.call that cannot answer "what did it cost / how slow was it"
+-- is an unaccountable action. Cost and latency are required on those rows
+-- specifically (a span.start legitimately has neither yet).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'agent_events_llm_call_accountable'
+  ) THEN
+    ALTER TABLE agent_events ADD CONSTRAINT agent_events_llm_call_accountable
+      CHECK (
+        event_type <> 'llm.call'
+        OR (cost_usd IS NOT NULL AND latency_ms IS NOT NULL)
+      );
+  END IF;
+END $$;
+
 SELECT create_hypertable(
   'agent_events',
   by_range('ts', INTERVAL '1 day'),
   if_not_exists => TRUE
 );
+
+-- The primary read path (M4) is "all events for one review, in time order",
+-- and pr_cost_hourly groups by review_id. Without this it is a full scan
+-- across every chunk.
+CREATE INDEX IF NOT EXISTS agent_events_review_ts_idx
+  ON agent_events (review_id, ts DESC);
 
 -- Append-only by construction (INV-6).
 --
@@ -83,6 +105,11 @@ SELECT create_hypertable(
 -- connects as the table owner (tsdbadmin), and owners bypass table privileges.
 -- A rule/trigger is the only thing that holds regardless of role, so the audit
 -- trail is immutable *by construction* rather than by convention.
+--
+-- ORDERING: the triggers themselves are (re)created at the END of this file.
+-- DROP MATERIALIZED VIEW ... CASCADE on a continuous aggregate cascades into
+-- triggers on the underlying hypertable, so creating them here would let a
+-- re-run silently disarm INV-6.
 CREATE OR REPLACE FUNCTION agent_events_reject_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -95,11 +122,6 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS agent_events_no_update ON agent_events;
-CREATE TRIGGER agent_events_no_update
-  BEFORE UPDATE OR DELETE ON agent_events
-  FOR EACH ROW EXECUTE FUNCTION agent_events_reject_mutation();
-
 -- Defence in depth: also revoke from any non-owner app role if one exists.
 DO $$
 BEGIN
@@ -109,7 +131,26 @@ BEGIN
 END $$;
 
 -- ═══ LANE 2b — ROLLUPS: continuous aggregates ═══════════════════════════
+-- CREATE ... IF NOT EXISTS will NOT update an existing view, so an older
+-- definition would survive a re-run forever. Drop it only when it is stale.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM timescaledb_information.continuous_aggregates
+    WHERE view_name = 'agent_health_1m'
+      AND view_definition LIKE '%''rejected''%'
+  ) THEN
+    DROP MATERIALIZED VIEW agent_health_1m CASCADE;
+    RAISE NOTICE 'dropped stale agent_health_1m (dead rejection_rate filter)';
+  END IF;
+END $$;
+
 -- Per-agent health: calls, cost, p95 latency, rejection rate (1-minute buckets)
+--
+-- NOTE on rejection_rate: it must match values the `outcome` column actually
+-- takes (approved|request_changes|critical_block|escalated). Filtering on a
+-- literal 'rejected' — which is never written — would make this metric a
+-- permanent 0.0 and silently kill the drift signal it exists to provide.
 CREATE MATERIALIZED VIEW IF NOT EXISTS agent_health_1m
 WITH (timescaledb.continuous) AS
 SELECT
@@ -118,7 +159,7 @@ SELECT
   count(*) FILTER (WHERE event_type = 'llm.call')     AS llm_calls,
   sum(cost_usd)                                       AS cost_usd,
   approx_percentile(0.95, percentile_agg(latency_ms)) AS p95_ms,
-  count(*) FILTER (WHERE outcome = 'rejected')::float
+  count(*) FILTER (WHERE outcome IN ('request_changes','critical_block','escalated'))::float
     / NULLIF(count(*) FILTER (WHERE outcome IS NOT NULL), 0) AS rejection_rate
 FROM agent_events
 GROUP BY bucket, agent
@@ -207,5 +248,39 @@ CREATE TABLE IF NOT EXISTS hitl_feedback (
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS hitl_feedback_finding_idx ON hitl_feedback (finding_id);
+
+-- ═══ INV-6 GUARDS — created LAST, deliberately ══════════════════════════
+-- These must be the final statements in the file. DROP MATERIALIZED VIEW ...
+-- CASCADE (used above to replace a stale continuous aggregate) cascades into
+-- triggers on the underlying hypertable. Creating these earlier means a
+-- re-run of this migration silently leaves the audit trail mutable — the
+-- exact failure L4 VERIFY caught.
+DROP TRIGGER IF EXISTS agent_events_no_update ON agent_events;
+CREATE TRIGGER agent_events_no_update
+  BEFORE UPDATE OR DELETE ON agent_events
+  FOR EACH ROW EXECUTE FUNCTION agent_events_reject_mutation();
+
+-- A FOR EACH ROW trigger cannot fire on TRUNCATE, so TRUNCATE would silently
+-- erase the whole audit trail. Close that hole with a statement-level trigger.
+DROP TRIGGER IF EXISTS agent_events_no_truncate ON agent_events;
+CREATE TRIGGER agent_events_no_truncate
+  BEFORE TRUNCATE ON agent_events
+  FOR EACH STATEMENT EXECUTE FUNCTION agent_events_reject_mutation();
+
+-- Fail loudly if the guards are not actually armed when this file finishes.
+DO $$
+DECLARE
+  n INT;
+BEGIN
+  SELECT count(*) INTO n
+    FROM pg_trigger
+   WHERE tgrelid = 'agent_events'::regclass
+     AND NOT tgisinternal
+     AND tgname IN ('agent_events_no_update', 'agent_events_no_truncate');
+  IF n <> 2 THEN
+    RAISE EXCEPTION 'INV-6 guards not armed: expected 2 triggers, found %', n;
+  END IF;
+  RAISE NOTICE 'INV-6 guards armed (% triggers)', n;
+END $$;
 
 -- ── done ────────────────────────────────────────────────────────────────

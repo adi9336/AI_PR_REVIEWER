@@ -29,7 +29,14 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def conn():
-    with psycopg.connect(TIGER_URL, connect_timeout=30) as c:
+    """Shared connection. autocommit=True so SELECTs don't hold open
+    transactions that would lock-block a concurrent migration re-run.
+
+    Tests that need a transaction wrap themselves in
+    ``with conn.transaction(force_rollback=True):`` which works correctly
+    regardless of the connection's autocommit setting.
+    """
+    with psycopg.connect(TIGER_URL, connect_timeout=30, autocommit=True) as c:
         yield c
 
 
@@ -52,22 +59,31 @@ def test_required_extensions_installed(conn):
 
 # ── 2. memory lane ──────────────────────────────────────────────────────
 def test_code_chunks_table_shape(conn):
-    cols = dict(
-        zip(
-            _scalars(
-                conn,
-                "select column_name from information_schema.columns "
-                "where table_name='code_chunks' order by ordinal_position",
-            ),
-            _scalars(
-                conn,
-                "select data_type from information_schema.columns "
-                "where table_name='code_chunks' order by ordinal_position",
-            ),
-        )
+    """Every expected column must exist AND have the correct type.
+
+    The original zip of two ORDER BY ordinal_position queries assumed row
+    alignment, which is fragile. We build a single "col:type" dict instead.
+    """
+    raw = _scalars(
+        conn,
+        "select column_name || ':' || data_type from information_schema.columns "
+        "where table_name='code_chunks' order by ordinal_position",
     )
-    for required in ("id", "repo", "path", "chunk_index", "content", "embedding", "content_tsv"):
-        assert required in cols, f"code_chunks missing column {required!r}"
+    cols = dict(x.split(":", 1) for x in raw)
+    required = {
+        "id": "uuid",
+        "repo": "text",
+        "path": "text",
+        "chunk_index": "integer",
+        "content": "text",
+        "content_tsv": "tsvector",
+    }
+    for col, expected_type in required.items():
+        actual = cols.get(col)
+        assert actual == expected_type, (
+            f"code_chunks.{col}: expected {expected_type}, got {actual}"
+        )
+    assert "embedding" in cols, "code_chunks missing column 'embedding'"
 
 
 def test_code_chunks_embedding_is_256_dim(conn):
@@ -173,6 +189,61 @@ def test_agent_events_still_accepts_insert(conn):
             assert cur.fetchone()[0] is not None, "append path is broken"
 
 
+def test_agent_events_rejects_truncate(conn):
+    """INV-6: a FOR EACH ROW trigger cannot fire on TRUNCATE.
+
+    Without a statement-level trigger, TRUNCATE silently erases the entire
+    audit trail — the exact thing INV-6 forbids.
+    """
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+                cur.execute("truncate table agent_events")
+
+
+def test_llm_call_must_carry_cost_and_latency(conn):
+    """INV-6: an llm.call with no cost/latency is an unaccountable action."""
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            with pytest.raises(psycopg.errors.CheckViolation):
+                cur.execute(
+                    "insert into agent_events (ts, review_id, agent, event_type)"
+                    " values (now(), gen_random_uuid(), 'security', 'llm.call')"
+                )
+
+
+def test_non_llm_events_may_omit_cost(conn):
+    """The accountability check must not block legitimate span/decision rows."""
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into agent_events (ts, review_id, agent, event_type)"
+                " values (now(), gen_random_uuid(), 'security', 'span.start') returning span_id"
+            )
+            assert cur.fetchone()[0] is not None
+
+
+def test_rejection_rate_filter_matches_real_outcomes(conn):
+    """The drift signal must filter on outcome values the system actually writes.
+
+    The schema documents outcome as approved|request_changes|critical_block|
+    escalated. A filter on a literal 'rejected' would never match, pinning
+    rejection_rate at 0.0 forever and silently killing the calibration signal.
+    """
+    definition = _scalars(
+        conn,
+        "select view_definition from timescaledb_information.continuous_aggregates"
+        " where view_name = 'agent_health_1m'",
+    )[0]
+    assert "'rejected'" not in definition, (
+        "agent_health_1m filters on 'rejected', which the outcome column never "
+        "takes — rejection_rate is dead and will always report 0.0"
+    )
+    assert "request_changes" in definition, (
+        "rejection_rate does not count request_changes as a rejection"
+    )
+
+
 # ── 4. truth lane ───────────────────────────────────────────────────────
 def test_truth_tables_exist(conn):
     tables = _scalars(
@@ -186,22 +257,91 @@ def test_truth_tables_exist(conn):
 
 
 def test_idempotency_key_is_unique(conn):
-    """INV-5: a retried webhook delivery must not be able to create a second review."""
+    """INV-5: a retried webhook delivery must not be able to create a second review.
+
+    The test must prove the UNIQUE constraint covers exactly the idempotency key
+    (repo, pr_number, delivery_uuid) — not just that *some* UNIQUE exists.
+    """
     con = _scalars(
         conn,
-        "select conname from pg_constraint c "
+        "select conname, pg_get_constraintdef(c.oid) as def from pg_constraint c "
         "join pg_class t on t.oid = c.conrelid "
         "where t.relname='pr_review_records' and c.contype='u'",
     )
     assert con, "pr_review_records has no UNIQUE constraint for delivery idempotency"
+    # The auditor found that asserting 'con' exists but not WHICH columns is weak.
+    # We now verify the specific columns the idempotency key requires.
+    defs = _scalars(
+        conn,
+        "select pg_get_constraintdef(c.oid) from pg_constraint c "
+        "join pg_class t on t.oid = c.conrelid "
+        "where t.relname='pr_review_records' and c.contype='u'",
+    )
+    assert any(
+        "repo" in d and "pr_number" in d and "delivery_uuid" in d for d in defs
+    ), f"no UNIQUE covers (repo, pr_number, delivery_uuid) — found: {defs}"
 
 
 def test_findings_cascade_from_review(conn):
-    """Deleting a review must not orphan its findings."""
-    rule = _scalars(
+    """Deleting a review must not orphan its findings.
+
+    The specific foreign key is finding_records.review_id → pr_review_records(id).
+    If a second FK were added later, a broad "c in any cascade" check would still
+    pass even if the *right* one didn't cascade. We target the exact constraint.
+    """
+    condef = _scalars(
         conn,
-        "select confdeltype from pg_constraint c "
+        "select pg_get_constraintdef(c.oid) from pg_constraint c "
         "join pg_class t on t.oid = c.conrelid "
-        "where t.relname='finding_records' and c.contype='f'",
+        "join pg_class rt on rt.oid = c.confrelid "
+        "where t.relname='finding_records' "
+        "  and rt.relname='pr_review_records' "
+        "  and c.contype='f'",
     )
-    assert "c" in rule, f"finding_records FK is not ON DELETE CASCADE (got {rule})"
+    assert condef, "no FK from finding_records to pr_review_records found"
+    assert any("ON DELETE CASCADE" in d for d in condef), (
+        f"FK exists but does not cascade on delete: {condef}"
+    )
+
+
+# ── 5. idempotency (M3 success criterion #4) ────────────────────────────
+def test_migration_is_idempotent():
+    """PLAN.md M3 claims 're-running exits 0'. Nothing asserted it until now.
+
+    Runs the real migration file against the real database a second time and
+    requires a clean exit — this is the criterion, executed rather than trusted.
+    """
+    import shutil
+    import subprocess
+
+    psql = shutil.which("psql") or r"C:\Program Files\PostgreSQL\16\bin\psql.exe"
+    if not Path(psql).exists():
+        pytest.skip(f"psql not found at {psql}")
+
+    migration = REPO_ROOT / "scripts" / "migrations" / "2026-06-tiger-init.sql"
+    assert migration.exists(), f"migration file missing: {migration}"
+
+    # psql quirk on this machine: flags MUST precede the connection URL.
+    # On Windows, subprocess.PIPE can deadlock with large NOTICE output.
+    # Redirect both streams to a temp file and read it back.
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        with open(tmp_path, "w") as out:
+            proc = subprocess.run(
+                [psql, "-v", "ON_ERROR_STOP=1", "-f", str(migration), TIGER_URL],
+                stdout=out,
+                stderr=subprocess.STDOUT,
+                timeout=60,
+                env={**os.environ, "PGCONNECT_TIMEOUT": "30"},
+            )
+        log = Path(tmp_path).read_text(encoding="utf-8", errors="replace")
+    finally:
+        os.unlink(tmp_path)
+
+    assert proc.returncode == 0, (
+        f"migration re-run failed (exit {proc.returncode}):\n{log[-2000:]}"
+    )
+    lowered = log.lower()
+    assert "error" not in lowered, f"migration re-run emitted errors:\n{log[-2000:]}"
