@@ -1,0 +1,381 @@
+{
+  "$comment": "nodes=modules, edges=[cause,effect] where cause is imported-by effect. Seeded from the antern.co architecture study (Part IV module map) + ADR-002 modular monolith.",
+  "project": ".",
+  "generated": "2026-07-30T22:34:11.430035Z",
+  "source": "https://www.antern.co/blogs/production-grade-ai-pr-review-agent (L0-L9, ADR-001..004)",
+  "nodes": [
+    {
+      "id": "core",
+      "layer": "core",
+      "files": [
+        "backend/core/workflow_engine.py",
+        "backend/core/exceptions.py"
+      ],
+      "note": "abstract orchestration interface; depends on NOTHING"
+    },
+    {
+      "id": "models",
+      "layer": "core",
+      "files": [
+        "backend/models/enums.py",
+        "backend/models/findings.py",
+        "backend/models/review.py",
+        "backend/models/webhook.py"
+      ],
+      "note": "Pydantic contracts: Finding, Review, WebhookEvent"
+    },
+    {
+      "id": "agents",
+      "layer": "domain",
+      "files": [
+        "backend/agents/base_agent.py",
+        "backend/agents/contracts.py",
+        "backend/agents/security_agent.py",
+        "backend/agents/quality_agent.py",
+        "backend/agents/test_agent.py",
+        "backend/agents/docs_agent.py"
+      ],
+      "note": "four specialists + shared base + Finding contract"
+    },
+    {
+      "id": "orchestrator",
+      "layer": "domain",
+      "files": [
+        "backend/orchestrator/graph.py",
+        "backend/orchestrator/nodes.py",
+        "backend/orchestrator/state.py",
+        "backend/orchestrator/langgraph_engine.py"
+      ],
+      "note": "LangGraph StateGraph + Send fan-out; impl of core.workflow_engine"
+    },
+    {
+      "id": "memory",
+      "layer": "infra",
+      "files": [
+        "backend/memory/tiger_client.py",
+        "backend/memory/embedder.py",
+        "backend/memory/context_retriever.py",
+        "backend/memory/redis_client.py"
+      ],
+      "note": "pgvectorscale hybrid retrieval; qdrant_client retired per ADR-003"
+    },
+    {
+      "id": "database",
+      "layer": "infra",
+      "files": [
+        "backend/database/postgres.py",
+        "backend/database/models.py",
+        "backend/database/repository.py"
+      ],
+      "note": "async engine + Tiger pool + init_tiger_schema"
+    },
+    {
+      "id": "observability",
+      "layer": "cross-cutting",
+      "files": [
+        "backend/observability/events.py",
+        "backend/observability/tracing.py",
+        "backend/observability/audit.py",
+        "backend/observability/alerting.py",
+        "backend/observability/logging.py",
+        "backend/observability/workflow_context.py"
+      ],
+      "note": "emit_agent_event -> hypertable; injected as middleware, not imported inward"
+    },
+    {
+      "id": "security",
+      "layer": "cross-cutting",
+      "files": [
+        "backend/security/threat_model.md",
+        "backend/security/injection_guard.py",
+        "backend/security/rbac.py",
+        "backend/security/masking.py"
+      ],
+      "note": "prompt-injection guard at the trust boundary"
+    },
+    {
+      "id": "reliability",
+      "layer": "infra",
+      "files": [
+        "backend/reliability/retry.py",
+        "backend/reliability/circuit_breaker.py",
+        "backend/reliability/idempotency.py",
+        "backend/reliability/timeout.py"
+      ],
+      "note": "the L8 mechanics"
+    },
+    {
+      "id": "tools",
+      "layer": "infra",
+      "files": [
+        "backend/tools/tool_registry.py",
+        "backend/tools/model_router.py",
+        "backend/tools/llm_client.py",
+        "backend/tools/sandbox.py",
+        "backend/tools/capability_scope.py"
+      ],
+      "note": "LLM client + Docker sandbox + capability scoping"
+    },
+    {
+      "id": "webhook_receiver",
+      "layer": "ingress",
+      "files": [
+        "backend/webhook_receiver/validator.py",
+        "backend/webhook_receiver/parser.py",
+        "backend/webhook_receiver/router.py"
+      ],
+      "note": "HMAC validation -> parse -> enqueue"
+    },
+    {
+      "id": "job_queue",
+      "layer": "infra",
+      "files": [
+        "backend/job_queue/arq_worker.py"
+      ],
+      "note": "ARQ worker consuming review jobs from Redis"
+    },
+    {
+      "id": "integrations",
+      "layer": "infra",
+      "files": [
+        "backend/integrations/github_client.py",
+        "backend/integrations/github_models.py"
+      ],
+      "note": "GitHub REST wrapper with retry"
+    },
+    {
+      "id": "api",
+      "layer": "ingress",
+      "files": [
+        "backend/api/reviews.py",
+        "backend/api/economics_router.py",
+        "backend/api/hitl_router.py",
+        "backend/api/queue.py",
+        "backend/api/schemas.py"
+      ],
+      "note": "REST surface"
+    },
+    {
+      "id": "hitl",
+      "layer": "domain",
+      "files": [
+        "backend/hitl/queue.py",
+        "backend/hitl/escalation.py",
+        "backend/hitl/feedback.py",
+        "backend/hitl/dispute.py"
+      ],
+      "note": "the L7 confidence gate consumers"
+    },
+    {
+      "id": "economics",
+      "layer": "domain",
+      "files": [
+        "backend/economics/cost_repository.py",
+        "backend/economics/budget.py",
+        "backend/economics/routing_advisor.py"
+      ],
+      "note": "BudgetGuard reads continuous aggregates (ADR-004)"
+    },
+    {
+      "id": "evaluation",
+      "layer": "domain",
+      "files": [
+        "backend/evaluation/golden_dataset.py",
+        "backend/evaluation/judge.py",
+        "backend/evaluation/regression_gate.py"
+      ],
+      "note": "golden PRs + LLM-as-judge + CI regression gate"
+    },
+    {
+      "id": "data",
+      "layer": "infra",
+      "files": [
+        "backend/data/ingestion.py",
+        "backend/data/freshness.py"
+      ],
+      "note": "code-chunk ingestion + re-embed freshness"
+    },
+    {
+      "id": "prompts",
+      "layer": "infra",
+      "files": [
+        "backend/prompts/registry.py",
+        "backend/prompts/templates/"
+      ],
+      "note": "versioned prompt registry"
+    },
+    {
+      "id": "auth",
+      "layer": "ingress",
+      "files": [
+        "backend/auth/dependencies.py"
+      ],
+      "note": "RBAC deps for FastAPI routes"
+    },
+    {
+      "id": "migrations",
+      "layer": "infra",
+      "files": [
+        "scripts/migrations/2026-06-tiger-init.sql"
+      ],
+      "note": "idempotent DDL: code_chunks, agent_events hypertable, continuous aggregates"
+    },
+    {
+      "id": "frontend",
+      "layer": "ui",
+      "files": [
+        "frontend/src/app",
+        "frontend/src/components",
+        "frontend/src/lib"
+      ],
+      "note": "Next.js dashboard reading continuous aggregates"
+    }
+  ],
+  "edges": [
+    [
+      "core",
+      "orchestrator"
+    ],
+    [
+      "models",
+      "agents"
+    ],
+    [
+      "models",
+      "orchestrator"
+    ],
+    [
+      "models",
+      "api"
+    ],
+    [
+      "core",
+      "agents"
+    ],
+    [
+      "agents",
+      "orchestrator"
+    ],
+    [
+      "memory",
+      "agents"
+    ],
+    [
+      "tools",
+      "agents"
+    ],
+    [
+      "prompts",
+      "agents"
+    ],
+    [
+      "reliability",
+      "integrations"
+    ],
+    [
+      "reliability",
+      "tools"
+    ],
+    [
+      "database",
+      "memory"
+    ],
+    [
+      "database",
+      "economics"
+    ],
+    [
+      "database",
+      "hitl"
+    ],
+    [
+      "migrations",
+      "database"
+    ],
+    [
+      "webhook_receiver",
+      "job_queue"
+    ],
+    [
+      "job_queue",
+      "orchestrator"
+    ],
+    [
+      "orchestrator",
+      "api"
+    ],
+    [
+      "hitl",
+      "orchestrator"
+    ],
+    [
+      "economics",
+      "agents"
+    ],
+    [
+      "integrations",
+      "orchestrator"
+    ],
+    [
+      "security",
+      "webhook_receiver"
+    ],
+    [
+      "security",
+      "agents"
+    ],
+    [
+      "auth",
+      "api"
+    ],
+    [
+      "data",
+      "memory"
+    ],
+    [
+      "evaluation",
+      "agents"
+    ],
+    [
+      "api",
+      "frontend"
+    ]
+  ],
+  "invariants": {
+    "INV-1-dependency-direction": {
+      "rule": "Dependencies point inward only. backend/core imports nothing; models imports nothing but stdlib/pydantic. No inner module (core, models) may import an outer one (api, orchestrator, integrations, frontend). observability is cross-cutting and injected as middleware, never imported by core.",
+      "why": "ADR-002 modular monolith. You must be able to delete any outer module and still have the inner ones compile.",
+      "check": "python scripts/check_deps.py   # fails non-zero on any inward-rule violation"
+    },
+    "INV-2-engine-abstraction": {
+      "rule": "No module outside backend/orchestrator/ may import langgraph directly. All orchestration goes through backend/core/workflow_engine.py (run/resume/get_state).",
+      "why": "ADR-001: keeps the LangGraph->Temporal swap a one-file change at Phase 13+.",
+      "check": "! grep -rn '^\\s*\\(import\\|from\\) langgraph' backend --include=*.py | grep -v '^backend/orchestrator/'"
+    },
+    "INV-3-untrusted-diff-never-instructions": {
+      "rule": "PR diff, title and body are DATA, never instructions. They may only reach an LLM prompt after passing through security/injection_guard.py, inside a delimited untrusted block, never in the system-role message.",
+      "why": "THE trust boundary (L2/L8/Part III 3.1). An attacker authors the diff.",
+      "check": "pytest tests/security/test_injection_guard.py -q"
+    },
+    "INV-4-every-outbound-call-bounded": {
+      "rule": "Every outbound call (LLM, GitHub REST, Tiger, Redis) has an explicit timeout AND passes through reliability/retry.py + circuit_breaker.py. Every orchestrator node has a timeout so the aggregator join cannot hang.",
+      "why": "L8 tool/API timeout + orchestration deadlock. Degrade to slower-but-correct.",
+      "check": "pytest tests/reliability -q"
+    },
+    "INV-5-no-unproven-action": {
+      "rule": "Nothing is posted to GitHub without (a) schema-valid Finding objects, (b) an idempotency check on X-GitHub-Delivery, and (c) the L7 confidence gate: post only if overall_confidence >= threshold AND zero CRITICAL findings; otherwise enqueue to hitl_reviews.",
+      "why": "L7 + L8 idempotency gap. A retried webhook must never double-post.",
+      "check": "pytest tests/test_hitl_gate.py tests/test_idempotency.py -q"
+    },
+    "INV-6-every-action-emits-an-event": {
+      "rule": "Every span, llm.call, tool.call and decision writes one append-only row to agent_events with cost_usd and latency_ms. agent_events is never UPDATEd or DELETEd. BudgetGuard reads agent_health_1m and hard-blocks before an LLM call when the daily cap is exceeded.",
+      "why": "L6 proof layer + ADR-004 cost control. If it cannot show its work, it has not done the work.",
+      "check": "pytest tests/observability/test_events_spine.py -q"
+    }
+  },
+  "freeze_boundary": [
+    "backend/**",
+    "frontend/**",
+    "scripts/migrations/**"
+  ]
+}

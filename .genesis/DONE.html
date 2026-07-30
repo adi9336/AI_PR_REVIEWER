@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DONE — ai-pr-review-agent</title>
+<style>
+  :root { --bg:#0d1117; --card:#161b22; --line:#30363d; --ink:#e6edf3; --mut:#8b949e;
+          --ok:#2ea043; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.55 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:920px; margin:0 auto; padding:32px 24px 80px; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:32px 0 12px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+  .sub { color:var(--mut); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:12px 0; }
+  .locked { border-left:3px solid var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-weight:600; }
+  code { background:#1f2630; padding:1px 6px; border-radius:5px; font-size:13px; }
+  .gate { display:flex; gap:10px; align-items:flex-start; padding:6px 0; }
+  .box { width:16px; height:16px; border:1.5px solid var(--mut); border-radius:4px; flex:0 0 auto; margin-top:2px; }
+  .done .box { background:var(--ok); border-color:var(--ok); }
+  .done .label { color:var(--mut); text-decoration:line-through; }
+  .pill { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--mut); }
+  .pill.ok{color:var(--ok);border-color:var(--ok);} .pill.wip{color:var(--warn);border-color:var(--warn);}
+  .note { color:var(--mut); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>DONE — ai-pr-review-agent</h1>
+  <p class="sub">The single source of truth for <b>what "done" means</b> and <b>the implementation plan</b>.
+     This file is LOCKED — the driver model may not edit it without explicit user request.
+     Updated: 2026-07-31</p>
+
+  <!-- ───────────── THE LOCKED SPEC ───────────── -->
+  <h2>1 · The Locked Spec (what we are building)</h2>
+  <div class="card locked">
+    <p><b>Cognitive job:</b> Reclaim scarce senior-reviewer attention (L0). On a pull_request webhook, fan out four grounded specialist reasoners - security, quality, tests, docs (L1/L3) - over the diff, each retrieval-grounded in the codebase (L4), each returning structured Findings with confidence + rationale (L2). An aggregator merges, deduplicates, scores overall confidence, and routes through a confidence-weighted HITL gate (L7). Every action is written to one time-ordered events spine for trace, audit, and cost (L6). Selectivity, not coverage, is the first principle.</p>
+    <p><b>Inputs:</b> GitHub pull_request webhook (HMAC-signed, X-GitHub-Delivery idempotency key). Diff + PR title/body are UNTRUSTED. Retrieved code_chunks context (semantic memory), team conventions/ADRs (procedural memory), past reviews (episodic memory). &nbsp;→&nbsp; <b>Outputs:</b> One structured review posted inline to the PR: Finding[] {agent_type, severity, category, summary, file_path, line_start/line_end, suggestion, confidence, rationale} + overall_confidence. Plus append-only agent_events rows (span/llm.call/tool.call/decision, cost, latency) and pr_review_records / finding_records truth rows.</p>
+    <p><b>Autonomy level:</b> Confidence-weighted, earned case by case (L7): high confidence AND zero CRITICAL findings -> post automatically. Below confidence threshold -> human approval queue. Any CRITICAL finding -> escalate to a human regardless of confidence. Level: 'human handles exceptions', with an escalation path to 'human decides'. Never pushes commits or mutates code. &nbsp;|&nbsp; <b>Human-in-the-loop points:</b> 1) hitl_reviews approval queue for any review below the confidence threshold. 2) Escalation/page-a-human on any CRITICAL finding. 3) Dispute path - a developer disputing a posted finding routes to dispute + records hitl_feedback. 4) Feedback requires a minimum evidence threshold before it changes behaviour (anti feedback-loop-poisoning).</p>
+    <p><b>Failure tolerance:</b> Degrade to slower-but-correct, never fast-but-wrong. Named modes + defenses (L8): hallucination -> grounding + rationale + confidence; tool/API timeout -> retries w/ backoff + circuit breakers; orchestration deadlock -> timeout on every node + dead-letter; almost-right finding -> dedup + confidence threshold + HITL; human bottleneck -> escalation-rate monitoring; feedback poisoning -> min evidence threshold; retried webhook -> idempotency key at ingress + dedup before posting. BudgetGuard hard-blocks before an LLM call if the daily cost cap is exceeded (ADR-004). &nbsp;|&nbsp; <b>Trust boundary:</b> PR diff/title/body are attacker-controlled DATA, never instructions - confined behind security/injection_guard.py. Webhook forgeries rejected by HMAC-SHA256 before any work. Untrusted code executes only in the Docker sandbox (tools/sandbox.py) under capability_scope. RBAC on API routes; secret masking in logs; agent_events is append-only and immutable by construction.</p>
+    <p class="note">Filled during Genesis step G0 (Cognitive Design) via <code>agentic-swe-master</code>.</p>
+  </div>
+
+  <!-- ───────────── DEFINITION OF DONE ───────────── -->
+  <h2>2 · Definition of Done (binary gates — checked by the VERIFIER, not the maker)</h2>
+  <div class="card">
+    <p class="note" style="margin-top:0"><b>Universal gates</b> — every milestone must pass all of these, computed not narrated.</p>
+    <div class="gate"><span class="box"></span><span class="label">Dependency direction inward, zero cycles <span class="note">(modular-architecture / ADR-002 gate) — <code>python scripts/check_deps.py</code></span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">Every outbound call has a timeout / circuit-breaker <span class="note">(production-readiness gate)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">All LLM/structured outputs validated against a schema <span class="note">(llmops gate)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label">Threat model written; prompt-injection / untrusted-input considered <span class="note">(security gate)</span></span></div>
+    <div class="gate"><span class="box"></span><span class="label"><code>mypy backend</code> clean AND <code>pytest -q</code> green in CI</span></div>
+    <div class="gate"><span class="box"></span><span class="label">One <code>verify</code> pass by a <b>separate</b> agent/model (L4)</span></div>
+    <div class="gate"><span class="box"></span><span class="label">No <code>context-graph.json</code> invariant violated by the change (INV-1 … INV-6)</span></div>
+    <p class="note">A milestone is DONE only when every box above is checked by the verifier.</p>
+
+    <p class="note" style="margin-top:18px"><b>Phase gates</b> — from the 20-phase roadmap (antern.co §4.1). A milestone inherits the gate of the phase it implements.</p>
+    <table>
+      <thead><tr><th>#</th><th>Phase</th><th>Green gate (binary)</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>Cognitive Design</td><td>Autonomy level and HITL boundaries decided and written</td></tr>
+        <tr><td>1</td><td>System Architecture</td><td>Module graph and ADRs exist; dependency rule defined</td></tr>
+        <tr><td>2</td><td>Frontend Engineering</td><td>Dashboard shell renders; streaming wired</td></tr>
+        <tr><td>3</td><td>Backend &amp; API</td><td>FastAPI up; webhook validates HMAC; idempotency holds</td></tr>
+        <tr><td>4</td><td>Workflow Orchestration</td><td>LangGraph fans out to 4 nodes in parallel; checkpoints resume</td></tr>
+        <tr><td>5</td><td>LLM &amp; Reasoning</td><td>Model routing per agent; prompt registry versioned</td></tr>
+        <tr><td>6</td><td>Memory Architecture <span class="pill">Tiger</span></td><td>RAG on pgvectorscale; hybrid retrieval returns top-k</td></tr>
+        <tr><td>7</td><td>Tooling &amp; Sandboxing</td><td>Tool registry enforces scope; Docker sandbox isolates</td></tr>
+        <tr><td>8</td><td>Multi-Agent Systems</td><td>4 specialists + contracts + aggregator produce one review</td></tr>
+        <tr><td>9</td><td>Evaluation</td><td>Golden dataset runs; LLM-as-judge scores; regression gate blocks</td></tr>
+        <tr><td>10</td><td>Observability &amp; Tracing <span class="pill">Tiger</span></td><td>OTel spans land in the agent_events hypertable</td></tr>
+        <tr><td>11</td><td>Security</td><td>Threat model written; RBAC enforced; audit trail immutable</td></tr>
+        <tr><td>12</td><td>Reliability</td><td>Retries, circuit breakers, idempotency verified under fault injection</td></tr>
+        <tr><td>13</td><td>Infrastructure <span class="pill">Tiger</span></td><td>Tiger Cloud provisioned; Tiger MCP wired</td></tr>
+        <tr><td>14</td><td>Data Engineering <span class="pill">Tiger</span></td><td>Ingestion pipeline runs; hypertable schema designed and migrated</td></tr>
+        <tr><td>15</td><td>Governance</td><td>Audit logs queryable; explainability per finding</td></tr>
+        <tr><td>16</td><td>Economics &amp; Cost Control <span class="pill">Tiger</span></td><td>Per-agent cost via continuous aggregates; BudgetGuard hard-blocks</td></tr>
+        <tr><td>17</td><td>Developer Experience</td><td>Prompt playground and trace viewer usable</td></tr>
+        <tr><td>18</td><td>CI/CD for AI</td><td>Prompt versioning; eval gates; canary release path</td></tr>
+        <tr><td>19</td><td>Human-in-the-Loop</td><td>Approval queue, escalation, dispute, feedback all wired</td></tr>
+        <tr><td>20</td><td>Continuous Learning <span class="pill">Tiger</span></td><td>Drift detection reads continuous aggregates</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ───────────── IMPLEMENTATION PLAN ───────────── -->
+  <h2>3 · Implementation Plan (the work, sliced into milestones)</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>#</th><th>Milestone</th><th>Phase</th><th>Demo command (proves it works)</th><th>Loops</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>M1</td><td>Repo skeleton + dependency rule enforced</td><td>1 · System Architecture</td><td><code>python scripts/check_deps.py &amp;&amp; pytest tests/test_architecture.py -q &amp;&amp; mypy backend/core backend/models</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M2</td><td>Webhook ingress: HMAC + idempotency + enqueue</td><td>3 · Backend &amp; API</td><td><code>pytest tests/test_webhook.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M3</td><td>Tiger schema + three lanes provisioned</td><td>13+14 · Infra &amp; Data <span class="pill">Tiger</span></td><td><code>psql "$TIGER_DATABASE_URL" -f scripts/migrations/2026-06-tiger-init.sql &amp;&amp; pytest tests/test_migrations.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M4</td><td>Events spine: append-only agent_events</td><td>10 · Observability <span class="pill">Tiger</span></td><td><code>pytest tests/observability/test_events_spine.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M5</td><td>Hybrid retrieval returns grounded top-k</td><td>6 · Memory <span class="pill">Tiger</span></td><td><code>python -m backend.data.ingestion --repo ./fixtures/sample_repo &amp;&amp; pytest tests/test_retrieval.py -q</code></td><td>L1, L3, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M6</td><td>One specialist agent, grounded + structured</td><td>5+8+11 · LLM / Multi-Agent / Security</td><td><code>pytest tests/test_security_agent.py tests/security/test_injection_guard.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M7</td><td>LangGraph fan-out to four specialists</td><td>4 · Workflow Orchestration</td><td><code>pytest tests/test_orchestrator.py -q</code> + langgraph-import grep clean</td><td>L1, L2, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M8</td><td>Aggregator + confidence-weighted HITL gate</td><td>8+19 · Multi-Agent &amp; HITL</td><td><code>pytest tests/test_aggregator.py tests/test_hitl_gate.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M9</td><td>End-to-end: webhook in, review posted, traced</td><td>12 · Reliability</td><td><code>docker compose up -d &amp;&amp; pytest tests/e2e/test_full_review.py -q</code></td><td>L1, L2, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>M10</td><td>BudgetGuard hard-blocks from the aggregate</td><td>16 · Economics <span class="pill">Tiger</span></td><td><code>pytest tests/test_budget_guard.py -q</code></td><td>L1, L4</td><td><span class="pill">todo</span></td></tr>
+        <tr><td>…</td><td>M11+ sliced after M9 proves the spine end-to-end</td><td></td><td></td><td></td><td></td></tr>
+      </tbody>
+    </table>
+    <p class="note">Total token budget = (n milestones × 50000). Update <span class="pill wip">wip</span> /
+       <span class="pill ok">done</span> as loops complete. This table is mirrored in <code>PLAN.md</code> for the agent to parse.</p>
+  </div>
+
+  <!-- ───────────── SKILL LOADING ───────────── -->
+  <h2>4 · Skill Loading Per Milestone</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>Milestone</th><th>Always-on canon</th><th>Milestone-specific skills</th></tr></thead>
+      <tbody>
+        <tr><td>M1</td><td>agentic-swe-master, coding-orchestrator, modular-architecture</td><td>tdd, modular-architecture</td></tr>
+        <tr><td>M2</td><td>(canon)</td><td>tdd, security-engineering, production-readiness</td></tr>
+        <tr><td>M3</td><td>(canon)</td><td>tdd, data-systems-engineering</td></tr>
+        <tr><td>M4</td><td>(canon)</td><td>tdd, production-readiness</td></tr>
+        <tr><td>M5</td><td>(canon)</td><td>tdd, data-systems-engineering, llmops-ai-agents</td></tr>
+        <tr><td>M6</td><td>(canon)</td><td>tdd, security-engineering, llmops-ai-agents</td></tr>
+        <tr><td>M7</td><td>(canon)</td><td>tdd, distributed-systems, llmops-ai-agents</td></tr>
+        <tr><td>M8</td><td>(canon)</td><td>tdd, llmops-ai-agents</td></tr>
+        <tr><td>M9</td><td>(canon)</td><td>tdd, production-readiness, distributed-systems</td></tr>
+        <tr><td>M10</td><td>(canon)</td><td>tdd, production-readiness</td></tr>
+        <tr><td>frontend M*</td><td>(canon)</td><td><b>design-system skill (MANDATORY)</b>, tdd, qa</td></tr>
+      </tbody>
+    </table>
+    <p class="note">If a milestone needs a skill not listed, G1 logs "skill X needed but not on the menu — loaded ad hoc" so the choice is visible.</p>
+  </div>
+
+</div>
+</body>
+</html>
