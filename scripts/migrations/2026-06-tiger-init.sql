@@ -77,9 +77,30 @@ SELECT create_hypertable(
   if_not_exists => TRUE
 );
 
--- Append-only by construction (INV-6): revoke mutation rights from the app role path.
--- (Owner can still TRUNCATE/DROP; the application never gets UPDATE/DELETE.)
--- Enforced here as a guardrail for any non-owner role.
+-- Append-only by construction (INV-6).
+--
+-- NOTE: a GRANT/REVOKE-based guard is NOT sufficient here — the application
+-- connects as the table owner (tsdbadmin), and owners bypass table privileges.
+-- A rule/trigger is the only thing that holds regardless of role, so the audit
+-- trail is immutable *by construction* rather than by convention.
+CREATE OR REPLACE FUNCTION agent_events_reject_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION
+    'agent_events is append-only (INV-6): % is not permitted on the audit trail',
+    TG_OP
+    USING HINT = 'Emit a new corrective event row instead of mutating history.';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS agent_events_no_update ON agent_events;
+CREATE TRIGGER agent_events_no_update
+  BEFORE UPDATE OR DELETE ON agent_events
+  FOR EACH ROW EXECUTE FUNCTION agent_events_reject_mutation();
+
+-- Defence in depth: also revoke from any non-owner app role if one exists.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rw') THEN

@@ -133,6 +133,46 @@ def test_agent_events_carries_cost_and_latency(conn):
         assert required in cols, f"agent_events missing column {required!r}"
 
 
+def test_agent_events_rejects_update(conn):
+    """INV-6: the audit trail is immutable *by construction*, not by convention.
+
+    A GRANT-based guard is not enough — the app connects as the table owner and
+    owners bypass privileges. This proves the trigger actually fires.
+    Everything runs inside a transaction that is rolled back.
+    """
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into agent_events (ts, review_id, agent, event_type, cost_usd, latency_ms)"
+                " values (now(), gen_random_uuid(), 'security', 'llm.call', 0.01, 100)"
+            )
+            with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+                cur.execute("update agent_events set cost_usd = 999 where agent = 'security'")
+
+
+def test_agent_events_rejects_delete(conn):
+    """INV-6: history cannot be erased either."""
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into agent_events (ts, review_id, agent, event_type)"
+                " values (now(), gen_random_uuid(), 'aggregator', 'decision')"
+            )
+            with pytest.raises(psycopg.errors.RaiseException, match="append-only"):
+                cur.execute("delete from agent_events where agent = 'aggregator'")
+
+
+def test_agent_events_still_accepts_insert(conn):
+    """The guard must block mutation without breaking the append path."""
+    with conn.transaction(force_rollback=True):
+        with conn.cursor() as cur:
+            cur.execute(
+                "insert into agent_events (ts, review_id, agent, event_type, cost_usd)"
+                " values (now(), gen_random_uuid(), 'docs', 'span.start', 0.002) returning span_id"
+            )
+            assert cur.fetchone()[0] is not None, "append path is broken"
+
+
 # ── 4. truth lane ───────────────────────────────────────────────────────
 def test_truth_tables_exist(conn):
     tables = _scalars(
