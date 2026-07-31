@@ -1,10 +1,10 @@
 # CURRENT
 - active_loop: NONE
-- target: M1 — Repo skeleton + dependency rule enforced
+- target: M5 — Hybrid retrieval returns grounded top-k
 - iteration: 0
-- last_gate: M3 PASSED (19/19 tests, L4 re-audit pending)
-- last_action: M3 complete — Tiger data spine provisioned, 10 L4 findings fixed, 19 tests green
-- next_action: L4 re-audit verdict, then start M1 BUILD loop
+- last_gate: M4 PASSED (32/32 tests, 8 events spine tests green)
+- last_action: M4 complete — emit_agent_event + span chain + ReviewContext, 8 tests pass
+- next_action: M5 BUILD — ingestion + embedder + hybrid retriever (ANN + FTS + RRF)
 - model: glm-5.2 (session) / kimi-k3 (default config) / hy3 (codegen)
 - tokens_used: 0
 - tokens_budget: 50000
@@ -17,7 +17,7 @@
 - EXPLAIN_DIFF is OFF for this project (set at scaffold time)
 - M1 demo command: `python scripts/check_deps.py && pytest tests/test_architecture.py -q && mypy backend/core backend/models`
 - M3 demo command: `psql -f scripts/migrations/2026-06-tiger-init.sql "$TIGER_DATABASE_URL" && ./.venv/Scripts/python.exe -m pytest tests/test_migrations.py -q`
-- M3 status: 19 tests pass, migration idempotent (3 runs), INV-6 guards armed (2 triggers)
+- M4 demo command: `./.venv/Scripts/python.exe -m pytest tests/observability/test_events_spine.py -q`
+- M4 status: 8 tests pass, span.start/end parent chain verified, INV-6 immutability verified
 - ADRs: 0001 Tiger Cloud, 0002 model routing (kimi-k3/hy3)
-- L4 VERIFY round 1: REJECT (10 findings) — all fixed in commit ee48495
-- L4 VERIFY round 2: running (deleg_0adbd87a)
+- M1: 5 tests, M3: 19 tests, M4: 8 tests — total 32 all green
