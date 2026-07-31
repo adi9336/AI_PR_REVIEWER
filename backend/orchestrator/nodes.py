@@ -1,16 +1,11 @@
 """nodes — graph node functions for the orchestrator.
 
-Each node is a function that takes the OrchestratorState (dict, since
-TypedDict is a dict at runtime) and returns a partial state update.
+Each node takes the OrchestratorState (TypedDict = dict at runtime)
+and returns a partial state update.
 
-Nodes:
-  - init_state      → prepares the state for fan-out
-  - run_security    → SecurityAgent.review_with_events
-  - run_quality     → QualityAgent.review_with_events
-  - run_tests       → TestAgent.review_with_events
-  - run_docs        → DocsAgent.review_with_events
-  - aggregate       → merge findings from all agents
-  - decide          → overall confidence + routing decision
+M8 upgrades:
+  - aggregate(): dedup with agreement notes (agents that agreed noted)
+  - decide(): full HITL gate routing — auto_post / approval_queue / escalate
 """
 
 from __future__ import annotations
@@ -120,44 +115,59 @@ def run_docs(state: OrchestratorState, config: RunnableConfig | None = None) -> 
 
 
 def aggregate(state: OrchestratorState) -> dict[str, Any]:
-    """Merge findings from all agents.
+    """Merge findings from all agents (M8: with agreement notes).
 
     Deduplication by (file_path, line_start) keeping highest confidence.
+    When multiple agents find the same issue, the merged finding gets
+    an `agreed_by` field listing the agents that agreed.
     """
     all_findings: list[dict[str, Any]] = []
-    for result in state.get("agent_results", []):
-        if result.get("error"):
+    for ar in state.get("agent_results", []):
+        if ar.get("error"):
             continue
-        all_findings.extend(result.get("findings", []))
+        all_findings.extend(ar.get("findings", []))
 
-    seen: dict[tuple[str | None, int | None], dict[str, Any]] = {}
+    # Group findings by (file_path, line_start)
+    groups: dict[tuple[str | None, int | None], list[dict[str, Any]]] = {}
     for f in all_findings:
         key = (f.get("file_path"), f.get("line_start"))
-        existing = seen.get(key)
-        if existing is None:
-            seen[key] = f
-        else:
-            existing_conf = float(existing.get("confidence", 0))
-            new_conf = float(f.get("confidence", 0))
-            if new_conf > existing_conf:
-                seen[key] = f
+        groups.setdefault(key, []).append(f)
 
-    merged = list(seen.values())
+    merged: list[dict[str, Any]] = []
+    for key, group in groups.items():
+        if len(group) == 1:
+            # No duplicates — but still record which agent found it
+            f = dict(group[0])
+            f.setdefault("agreed_by", [])
+            merged.append(f)
+        else:
+            # Multiple agents found the same issue — keep highest confidence
+            # and note which agents agreed
+            best = max(group, key=lambda x: float(x.get("confidence", 0)))
+            agreed_by = sorted({
+                str(g.get("agent_type", "")) for g in group
+            })
+            entry: dict[str, Any] = dict(best)
+            entry["agreed_by"] = agreed_by
+            entry["agreement_count"] = len(agreed_by)
+            merged.append(entry)
+
     return {"merged_findings": merged}
 
 
 def decide(state: OrchestratorState) -> dict[str, Any]:
-    """Compute overall confidence and routing decision.
+    """Compute overall confidence and route through the HITL gate (M8).
 
-    Simplified logic for M7 (M8 adds full HITL gate):
-      - If any CRITICAL finding → escalate
-      - If overall confidence >= 0.8 → auto_post
-      - Otherwise → approval_queue
+    Routing logic:
+      - Any CRITICAL finding → escalate (INV-5: regardless of confidence)
+      - Overall confidence >= 0.8 and no CRITICAL → auto_post
+      - Below threshold → approval_queue (row in hitl_reviews)
     """
     findings = state.get("merged_findings", [])
     if not findings:
         return {"overall_confidence": 1.0, "decision": "auto_post"}
 
+    # INV-5: any CRITICAL → escalation regardless of confidence
     has_critical = any(
         str(f.get("severity", "")).upper() == "CRITICAL"
         for f in findings
@@ -165,8 +175,17 @@ def decide(state: OrchestratorState) -> dict[str, Any]:
     if has_critical:
         return {"overall_confidence": 0.0, "decision": "escalate"}
 
+    # Compute overall confidence (weighted average)
     confidences = [float(f.get("confidence", 0.5)) for f in findings]
     overall = sum(confidences) / len(confidences) if confidences else 0.5
+
+    # Boost confidence when multiple agents agree on the same finding
+    agreement_boost = 0.0
+    for f in findings:
+        agreed_count = f.get("agreement_count", 1)
+        if agreed_count > 1:
+            agreement_boost += 0.02 * (agreed_count - 1)
+    overall = min(1.0, overall + agreement_boost)
 
     if overall >= 0.8:
         decision = "auto_post"
