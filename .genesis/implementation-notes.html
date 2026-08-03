@@ -33,13 +33,13 @@
   <p class="sub"><b>Rolling source of truth for what is LIVE right now.</b> The wiki can lag; this file
      cannot. Read this on every session start to avoid rebuilding what exists. This is your
      <i>git-like restart point</i>: if context is lost, this file rehydrates you.
-     Last updated: <code>{{TIMESTAMP}}</code> · by loop: <code>{{LOOP_ID}}</code></p>
+     Last updated: <code>2026-08-03</code> · by loop: <code>L1 BUILD (M11)</code></p>
 
   <!-- ───────────── ONE-LINE STATUS ───────────── -->
   <div class="card live">
-    <b>Now in flight:</b> {{NOW_IN_FLIGHT}}<br>
-    <b>Active loop:</b> {{ACTIVE_LOOP}} · <b>Current milestone:</b> {{MILESTONE_ID}} · <b>Phase:</b> {{PHASE}}<br>
-    <b>Blocked on:</b> {{BLOCKERS}}
+    <b>Now in flight:</b> M12+ unsliced — candidate: dashboard (Phase 2/17), CI/CD-for-AI (18), governance (15), continuous learning (20)<br>
+    <b>Active loop:</b> NONE — M11 complete · <b>Current milestone:</b> M12+ (next slice) · <b>Phase:</b> —<br>
+    <b>Blocked on:</b> user picks the next milestone direction
   </div>
 
   <!-- ───────────── WHAT'S LIVE ───────────── -->
@@ -48,9 +48,18 @@
     <table>
       <thead><tr><th>Capability</th><th>Where (file/route/symbol)</th><th>Status</th><th>Verified by</th></tr></thead>
       <tbody>
-        <tr><td>{{CAP_1}}</td><td><code>{{LOC_1}}</code></td><td><span class="pill live">live</span></td><td>{{VERIFY_1}}</td></tr>
-        <tr><td>{{CAP_2}}</td><td><code>{{LOC_2}}</code></td><td><span class="pill wip">partial</span></td><td>—</td></tr>
-        <tr><td>add rows as milestones complete…</td><td></td><td></td><td></td></tr>
+        <tr><td>FastAPI server (webhook in, review out, HITL queue, docs)</td><td><code>backend/main.py</code> — POST /webhook/github · GET /health · GET /reviews/{id} · GET /hitl/queue · POST /reviews/{id}/run</td><td><span class="pill live">live</span></td><td>live curl run 2026-08-03</td></tr>
+        <tr><td>Webhook ingress: HMAC-256 + idempotency (delivery UUID)</td><td><code>backend/webhook_receiver/{router,validator,parser}.py</code> · <code>backend/reliability/idempotency.py</code></td><td><span class="pill live">live</span></td><td>202/duplicate/401 matrix, tests/e2e/test_full_review.py</td></tr>
+        <tr><td>Pipeline persistence (findings, status, HITL enqueue, decision event)</td><td><code>backend/webhook_receiver/router.py → run_review_pipeline()</code></td><td><span class="pill live">live</span></td><td>3 e2e persistence tests + live SQLi run</td></tr>
+        <tr><td>4-specialist parallel fan-out (LangGraph Send API)</td><td><code>backend/orchestrator/{graph,nodes,state}.py</code></td><td><span class="pill live">live</span></td><td>tests/test_orchestrator.py · live 13-event trace</td></tr>
+        <tr><td>Security agent + prompt-injection guard (INV-3)</td><td><code>backend/agents/security_agent.py</code> · <code>backend/security/injection_guard.py</code></td><td><span class="pill live">live</span></td><td>tests/security + live SQLi → CRITICAL finding</td></tr>
+        <tr><td>Hybrid retrieval (DiskANN ANN + FTS + RRF)</td><td><code>backend/memory/context_retriever.py</code> · <code>backend/data/ingestion.py</code></td><td><span class="pill live">live</span></td><td>tests/test_retrieval.py</td></tr>
+        <tr><td>Events spine (append-only agent_events, INV-6)</td><td><code>backend/observability/events.py</code></td><td><span class="pill live">live</span></td><td>tests/observability/test_events_spine.py</td></tr>
+        <tr><td>Aggregator + confidence-weighted HITL gate (INV-5)</td><td><code>backend/orchestrator/nodes.py</code> · <code>backend/hitl/queue.py</code></td><td><span class="pill live">live</span></td><td>tests/test_aggregator.py, test_hitl_gate.py</td></tr>
+        <tr><td>BudgetGuard (cost cap from continuous aggregate)</td><td><code>backend/economics/**</code></td><td><span class="pill live">live</span></td><td>tests/test_budget_guard.py</td></tr>
+        <tr><td>Mock PR webhook sender (manual e2e)</td><td><code>test_webhook.py</code> (repo root)</td><td><span class="pill live">live</span></td><td>live run 2026-08-03 → 202 + review_id</td></tr>
+        <tr><td>Evaluation (golden dataset, judge, regression gate)</td><td><code>backend/evaluation/**</code> · <code>fixtures/golden/</code> · <code>python -m backend.evaluation.regression_gate</code></td><td><span class="pill live">live</span></td><td>L4 VERIFY APPROVE 2026-08-03 · tests/test_evaluation.py (11)</td></tr>
+        <tr><td>Next.js dashboard, CI/CD-for-AI, governance, continuous learning</td><td>frontend/ · scripts/ · backend/evaluation/…</td><td><span class="pill wip">wip</span></td><td>M12+ not sliced yet</td></tr>
       </tbody>
     </table>
     <p class="note">Append a row the moment a milestone passes L4 VERIFY. The grep in G0 checks against this table.</p>
@@ -60,7 +69,8 @@
   <h2>Decisions that constrain new work</h2>
   <div class="card">
     <ul>
-      <li><code>{{DECISION_ID}}</code> — {{DECISION_SUMMARY}} → see <code>decisions/{{DECISION_ID}}.md</code></li>
+      <li><code>decisions/0001-tiger-cloud-data-spine.md</code> — one store (Tiger Cloud: TimescaleDB + pgvector + pgvectorscale) for memory/truth/time lanes → see <code>decisions/0001-…md</code></li>
+      <li><code>decisions/0002-model-routing-kimi-k3-hy3.md</code> — Hermes loop routing (kimi-k3 reasoning / hy3 codegen, provider opencode-go). NOTE: the backend's LlmClient hits OpenAI directly (no base_url), so <b>backend/.env must use OpenAI-served models</b> — MODEL_REASONING=MODEL_CODEGEN=gpt-4o-mini (kimi-k3/hy3 404 on OpenAI).</li>
       <li>add ADR pointers here so future loops don't relitigate settled calls</li>
     </ul>
   </div>
@@ -69,12 +79,13 @@
   <h2>Deviations from plan (append-only — the "why we didn't do it the obvious way" log)</h2>
   <div class="card">
     <p class="note">Append a row whenever the agent couldn't follow approach A and switched to B.
-       This is the institutional memory genesis would otherwise lose silently.
        Format: date · couldn't use X because Y · used Z instead · invariant impact.</p>
     <table>
       <thead><tr><th>Date</th><th>Milestone</th><th>Planned approach</th><th>Actual approach</th><th>Reason</th><th>Invariant impact</th></tr></thead>
       <tbody>
-        <tr><td colspan="6" style="color:var(--mut);font-style:italic">no deviations yet — append a row when a plan change occurs</td></tr>
+        <tr><td>2026-07-31</td><td>M2</td><td>Standalone webhook milestone with tests/test_webhook.py + Redis/ARQ enqueue</td><td>Folded into M9: validator/parser/idempotency built, coverage lives in tests/e2e/test_full_review.py; no ARQ worker wired (pipeline runs synchronously behind the endpoint)</td><td>No Redis broker provisioned; e2e milestone covered the same assertions cheaper</td><td>None (INV-5 idempotency still enforced via claim_delivery)</td></tr>
+        <tr><td>2026-08-03</td><td>ops</td><td>Backend agents on MODEL_REASONING=kimi-k3 / MODEL_CODEGEN=hy3 (ADR-0002)</td><td>backend/.env switched to gpt-4o-mini for both</td><td>LlmClient talks to OpenAI (no base_url); kimi-k3/hy3 live on the opencode-go provider and 404 on OpenAI; ADR-0002 governs the Hermes loop, not the backend</td><td>None — cost tracking keyed per model still works</td></tr>
+        <tr><td>2026-08-03</td><td>ops</td><td>—</td><td>User rotated OPENAI_API_KEY (old key 401'd live runs)</td><td>Key expired/rotated since M6 verification</td><td>None — verified working (embedding + chat)</td></tr>
       </tbody>
     </table>
   </div>
@@ -83,8 +94,9 @@
   <h2>Known gaps &amp; the ordered Next list</h2>
   <div class="card">
     <ol>
-      <li>{{NEXT_1}}</li>
-      <li>{{NEXT_2}}</li>
+      <li>M11 — Evaluation (in flight): golden dataset fixtures, judge (precision/recall/F1), regression gate</li>
+      <li>M12+ (unsliced): dashboard (Phase 2/17), CI/CD-for-AI (18), governance/audit (15), continuous learning/drift (20)</li>
+      <li>No Redis/ARQ worker — webhook runs the pipeline synchronously; enqueue path is stubbed for production</li>
     </ol>
     <p class="note">Mirror of <code>checkpoints/CURRENT.md → next_action</code>, but human-readable and durable across compaction.</p>
   </div>
@@ -92,8 +104,10 @@
   <!-- ───────────── SESSION LOG (append-only) ───────────── -->
   <h2>Session log (append-only, newest first)</h2>
   <div class="card">
-    <p><code>{{TIMESTAMP}}</code> — {{SESSION_SUMMARY}}</p>
-    <p class="note">One paragraph per session: what shipped, what broke, what's next. This is the narrative the next cold session reads first.</p>
+    <p><code>2026-08-03</code> — M11 (Evaluation) shipped: golden dataset fixture, deterministic judge (precision/recall/F1, greedy match, partial credit), regression gate CLI (exit 0 pass / 1 fail / 2 usage), 11 tests. L4 VERIFY APPROVE by fresh-context subagent (ran all checks independently incl. live-DB event test). Post-approval polish: missing --findings → clean error exit 2. Spine: M1-M10 marked done, implementation-notes filled, M2 deviation logged, M11 done (DONE.html pill ok, PLAN.md progress, CURRENT.md → M12+). 103 tests green. Pending: M12 slice (user picks: dashboard / CI-CD / governance / continuous learning).</p>
+    <p><code>2026-08-03</code> — Resumed cold. Verified webhook flow live: fixed missing-signature 500→401, wired pipeline persistence (findings/status/HITL/decision event), surfaced agent-failure routing (never false auto_post), fixed .env model routing (gpt-4o-mini), added test_webhook.py mock sender. Live SQLi run: 202 → escalate, CRITICAL sql-injection persisted, HITL queued, 13-event trace. 92 tests green, mypy 89 files clean, deps clean. Commit c25811c.</p>
+    <p><code>2026-08-01</code> — FastAPI entry point (backend/main.py) added; server verified runnable (health, docs, HITL queue, webhook HMAC rejection). All 87 tests green. Commit 26eea8b.</p>
+    <p><code>2026-07-31/08-01</code> — M1–M10 built and checkpointed: skeleton+INV-1/2 (M1), Tiger schema (M3), events spine (M4), hybrid retrieval (M5), security agent (M6), LangGraph fan-out (M7), aggregator+HITL (M8), e2e (M9), BudgetGuard (M10). 87 tests green at checkpoint 4583539.</p>
   </div>
 
 </div>

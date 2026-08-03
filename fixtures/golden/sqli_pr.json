@@ -1,0 +1,23 @@
+{
+  "pr_id": "sqli_pr",
+  "title": "SQL injection via string concatenation",
+  "diff": "--- a/src/db.py\n+++ b/src/db.py\n@@ -10,7 +10,7 @@\n def get_user(user_id):\n-    return db.query(\"SELECT * FROM users WHERE id = ?\", (user_id,))\n+    query = \"SELECT * FROM users WHERE id = \" + user_id\n+    return db.execute(query)\n",
+  "expected_findings": [
+    {
+      "severity": "CRITICAL",
+      "category": "sql-injection",
+      "file_path": "src/db.py",
+      "line_start": 10,
+      "line_end": 12,
+      "summary": "Unsanitized user input in SQL query"
+    },
+    {
+      "severity": "HIGH",
+      "category": "error handling",
+      "file_path": "src/db.py",
+      "line_start": 11,
+      "line_end": 12,
+      "summary": "db.execute failure not handled"
+    }
+  ]
+}

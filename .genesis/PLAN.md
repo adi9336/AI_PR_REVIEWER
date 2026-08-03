@@ -183,11 +183,38 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + production-readiness
 - **Token budget:** 50000
 
-<!-- M11+ (evaluation golden dataset, dashboard, CI/CD, governance, continuous learning) get sliced
-     after M9 proves the spine end-to-end. Do not pre-slice what the first nine milestones will reshape. -->
+### M11 — Evaluation: golden dataset + LLM-as-judge + regression gate
+- **Outcome:** A `fixtures/golden/` dataset of fixture PR diffs with hand-authored expected findings; a
+  judge that scores the pipeline's findings against the golden set (precision/recall/F1); a regression
+  gate that blocks when scores drop below threshold. Every evaluation run emits one `evaluation.run`
+  event with the score (INV-6 proof layer).
+- **Phase:** 9 — Evaluation
+- **Files:** `backend/evaluation/**`, `fixtures/golden/**`, `tests/test_evaluation.py`
+- **Demo command:** `pytest tests/test_evaluation.py -q`
+- **Success criteria:** (1) golden dataset loads schema-valid (GoldenPR: diff + expected findings with
+  severity/category/file_path/line_start); (2) judge scores the known-good findings list ≥ 0.8 F1 vs its
+  golden entry; (3) a deliberately degraded list (missed finding + wrong severity) scores below the
+  threshold → regression gate exits non-zero; (4) judge emits one `evaluation.run` event with the score.
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + llmops-ai-agents
+- **Token budget:** 50000
+
+<!-- M12+ (dashboard, CI/CD for AI, governance, continuous learning) get sliced after M11 lands. -->
+
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
-- _(none yet — first loop fills this)_
+- 2026-08-03 · M11 done — Evaluation: golden dataset + judge (precision/recall/F1) + regression gate (11 tests) · L4 VERIFY APPROVE · 103 tests total
+- 2026-08-03 · webhook verification — 401-on-missing-sig fix, pipeline persistence (findings/status/HITL/decision event), mock PR script (test_webhook.py) · live e2e verified (SQLi diff → escalate, finding persisted, HITL queued) · c25811c · 92 tests
+- 2026-08-01 · M10 done — BudgetGuard hard-blocks from agent_health_1m · d5b94bb · 87 tests
+- 2026-08-01 · M9 done — e2e webhook→review→trace, retries + circuit breaker · 96779a1 · 87 tests
+- 2026-08-01 · M8 done — aggregator + confidence-weighted HITL gate (INV-5) · 486e86f
+- 2026-07-31 · M7 done — LangGraph fan-out to 4 specialists behind engine interface (INV-2) · 5eef8bb
+- 2026-07-31 · M6 done — security_agent grounded + injection-guarded (INV-3) · efc3047
+- 2026-07-31 · M5 done — hybrid retrieval DiskANN ANN + FTS + RRF · 090b0c5
+- 2026-07-31 · M4 done — events spine append-only (INV-6) · 9eeacc0
+- 2026-07-31 · M3 done — Tiger schema idempotent, three lanes · 1bd0fd3
+- 2026-07-31 · M2 folded into M9 — webhook ingress (HMAC/idempotency/parser) covered by tests/e2e/test_full_review.py; see implementation-notes deviations
+- 2026-07-31 · M1 done — repo skeleton + dependency rule (INV-1/2) · 0a0d2da

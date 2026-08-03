@@ -1,24 +1,21 @@
 # CURRENT
 - active_loop: NONE
-- target: NONE — M1-M10 complete
+- target: M12+ — dashboard, CI/CD for AI, governance, continuous learning (not yet sliced)
 - iteration: 0
-- last_gate: M10 PASSED (87/87 tests, 5 BudgetGuard tests green)
-- last_action: M10 complete — BudgetGuard reads daily cost from agent_events, hard-blocks past cap
-- next_action: M11+ (evaluation golden dataset, dashboard, CI/CD, governance, continuous learning) — not yet sliced
-- model: glm-5.2 (session) / kimi-k3 (default config) / hy3 (codegen)
+- last_gate: M11 DONE — L4 VERIFY APPROVE (2026-08-03)
+- last_action: M11 complete — Evaluation: golden dataset (fixtures/golden/sqli_pr.json), deterministic judge (precision/recall/F1), regression gate CLI (exit 0/1/2), 11 tests; spine reconciled M1-M11
+- next_action: slice M12 (dashboard Phase 2/17, or CI/CD-for-AI Phase 18) after user picks direction
+- model: gpt-4o-mini (backend agents) · kimi-k3/hy3 (Hermes loop, opencode-go)
 - tokens_used: 0
 - tokens_budget: 50000
 - skills_loaded: []
 
 ## Notes
 - Design source of truth: https://www.antern.co/blogs/production-grade-ai-pr-review-agent
-- Stack: Python 3.11+ / FastAPI / LangGraph / Redis+ARQ / Tiger Cloud / Next.js
-- OPENAI_API_KEY is set (embeddings + LLM chat work)
-- TOTAL: 87 tests all green
-  M1: 5 (architecture), M3: 19 (Tiger schema), M4: 8 (events spine),
-  M5: 5 (hybrid retrieval), M6: 19 (security agent + injection guard),
-  M7: 8 (orchestrator), M8: 13 (aggregator + HITL gate),
-  M9: 5 (e2e integration), M10: 5 (BudgetGuard)
-- check_deps: 88 files, 0 violations (INV-1, INV-2 clean)
-- mypy strict: 88 files, 0 errors
-- Milestones M1-M10 complete. M11+ not yet sliced per PLAN.md.
+- Stack: Python 3.11+ / FastAPI / LangGraph / Tiger Cloud / OpenAI (gpt-4o-mini)
+- 103 tests all green (M1:5, M3:19, M4:8, M5:5, M6:19, M7:8, M8:13, M9:5, M10:5, webhook/persistence +5, M11 evaluation:11)
+- check_deps: 89 files, 0 violations · mypy strict: 89 files, 0 errors
+- Webhook flow LIVE-verified 2026-08-03: 202 → real 4-agent run → escalate → CRITICAL sql-injection persisted → HITL queued → 13-event trace
+- M11 gate: pytest tests/test_evaluation.py -q (11 passed) · python -m backend.evaluation.regression_gate (exit 0; degraded → exit 1; missing file → exit 2)
+- M2 folded into M9 (see implementation-notes.html deviations)
+- backend/.env uses gpt-4o-mini for MODEL_REASONING/MODEL_CODEGEN (LlmClient = OpenAI direct; kimi-k3/hy3 are Hermes-loop models)
