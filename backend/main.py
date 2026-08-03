@@ -32,6 +32,7 @@ from backend.database.repository import get_findings_for_review, get_review_reco
 from backend.hitl.queue import list_queued
 from backend.observability.events import get_events_for_review
 from backend.webhook_receiver.router import router as webhook_router
+from backend.api.audit import router as audit_router
 
 app = FastAPI(
     title="AI PR Review Agent",
@@ -41,6 +42,9 @@ app = FastAPI(
 
 # Mount the webhook router
 app.include_router(webhook_router)
+
+# Mount the governance router (audit + explainability, API-key protected)
+app.include_router(audit_router)
 
 
 @app.get("/health")

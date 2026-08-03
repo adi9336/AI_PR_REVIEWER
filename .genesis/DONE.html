@@ -108,7 +108,8 @@
         <tr><td>M11</td><td>Evaluation: golden dataset + LLM-as-judge + regression gate</td><td>9 · Evaluation</td><td><code>pytest tests/test_evaluation.py -q</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
         <tr><td>M12</td><td>Tooling &amp; Sandboxing: registry + capability scope + Docker sandbox + model router</td><td>7 · Tooling &amp; Sandboxing</td><td><code>pytest tests/test_tooling.py -q</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
         <tr><td>M13</td><td>CI/CD for AI: prompt versioning + CI gates + eval regression gate</td><td>18 · CI/CD for AI</td><td><code>pytest tests/test_prompts.py -q &amp;&amp; python scripts/ci_check.py</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
-        <tr><td>…</td><td>M14+ sliced after M13 lands (dashboard, governance, continuous learning)</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>M14</td><td>Governance: queryable audit + per-finding explainability + RBAC</td><td>15 · Governance</td><td><code>pytest tests/test_governance.py -q</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
+        <tr><td>…</td><td>M15+ sliced after M14 lands (dashboard, continuous learning)</td><td></td><td></td><td></td><td></td></tr>
       </tbody>
     </table>
     <p class="note">Total token budget = (n milestones × 50000). Update <span class="pill wip">wip</span> /

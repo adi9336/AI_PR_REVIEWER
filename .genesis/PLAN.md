@@ -238,13 +238,24 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + production-readiness + llmops-ai-agents
 - **Token budget:** 50000
 
-<!-- M14+ (dashboard, governance, continuous learning) get sliced after M13 lands. -->
+### M14 — Governance: queryable audit + per-finding explainability + RBAC
+- **Outcome:** The audit spine becomes answerable. `audit.py` queries agent_events read-only (by review/agent/type/time, payloads secret-masked) — immutable by construction (INV-6). `explain_finding()` reconstructs WHY a finding exists: the finding, its review, the time-ordered events trace, the prompt_version(s) that ran, and the decision. RBAC (`auth/dependencies.py`) protects the audit/explain API with a fail-closed API key (constant-time compare); `masking.py` redacts secrets from any served text.
+- **Phase:** 15 — Governance
+- **Files:** `backend/observability/audit.py`, `backend/auth/dependencies.py`, `backend/security/masking.py`, `backend/api/audit.py`, `backend/main.py` (mount router), `tests/test_governance.py`
+- **Demo command:** `pytest tests/test_governance.py -q`
+- **Success criteria:** (1) masking redacts sk-/ghp_/postgres DSNs/k=v secrets, leaves plain text; (2) query_audit filters by agent/event_type/limit, returns time-ordered rows with payloads masked (DB-gated); (3) audit_summary counts per event_type/agent + total cost (DB-gated); (4) explain_finding returns finding + trace + prompt_version + decision (DB-gated); (5) RBAC: no key → 503, wrong key → 401, valid key → pass (constant-time); (6) GET /audit/events + /audit/reviews/{id}/explain wired in main.py, 401 without key (TestClient).
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + security-engineering + production-readiness
+- **Token budget:** 50000
+
+<!-- M15+ (dashboard, continuous learning) get sliced after M14 lands. -->
 
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-04 · M14 done — Governance: queryable audit (read-only, secret-masked) + per-finding explainability (finding + trace + prompt_version + decision) + fail-closed RBAC API key (19 tests) · L4 VERIFY APPROVE (round 2; round 1 caught list-of-dicts masking leak, non-ASCII 500, invalid-UUID 500) · 162 tests total · pushed to GitHub
 - 2026-08-03 · M13 done — CI/CD for AI: prompt versioning (content-hash on every llm.call) + ci_check gates + GitHub Actions + REAL canary (agents vs golden set, live LLM) (14 tests) · L4 VERIFY APPROVE (round 2; round 1 caught vacuous gate) · 143 tests total
 - 2026-08-03 · M12 done — Tooling & Sandboxing: tool registry (5 gates) + capability scope + Docker sandbox (live isolation proofs) + model router (26 tests) · L4 VERIFY APPROVE (round 2) · 129 tests total
 - 2026-08-03 · M11 done — Evaluation: golden dataset + judge (precision/recall/F1) + regression gate (11 tests) · L4 VERIFY APPROVE · 103 tests total
