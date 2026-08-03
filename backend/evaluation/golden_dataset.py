@@ -28,6 +28,7 @@ class GoldenFinding(BaseModel):
     line_start: int | None = None
     line_end: int | None = None
     summary: str = ""
+    agent_type: str = ""  # which specialist should produce this finding ("" = any)
 
 
 class GoldenPR(BaseModel):
@@ -36,6 +37,7 @@ class GoldenPR(BaseModel):
     pr_id: str
     title: str = ""
     diff: str
+    agents: list[str] = Field(default_factory=lambda: ["security", "quality", "tests", "docs"])
     expected_findings: list[GoldenFinding] = Field(default_factory=list)
 
 

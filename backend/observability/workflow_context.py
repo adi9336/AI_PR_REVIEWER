@@ -15,6 +15,7 @@ from uuid import UUID
 
 from backend.models.enums import EventType, Outcome
 from backend.observability.events import emit_agent_event, emit_span
+from backend.prompts.registry import prompt_version
 
 
 class ReviewContext:
@@ -51,6 +52,10 @@ class ReviewContext:
         payload: dict[str, Any] | None = None,
     ) -> UUID:
         """Emit an llm.call event. cost_usd and latency_ms are required."""
+        # M13: every llm.call must record which prompt version ran (INV-6
+        # audit trail). Fill it in unless the caller already supplied one.
+        merged_payload = dict(payload) if payload else {}
+        merged_payload.setdefault("prompt_version", prompt_version(agent))
         return emit_agent_event(
             self.review_id,
             agent,
@@ -61,7 +66,7 @@ class ReviewContext:
             cost_usd=cost_usd,
             latency_ms=latency_ms,
             confidence=confidence,
-            payload=payload,
+            payload=merged_payload,
             conn=self.conn,
         )
 

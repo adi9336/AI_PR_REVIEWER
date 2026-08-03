@@ -24,7 +24,12 @@ from backend.core.exceptions import InjectionDetected, LlmCallError, PrReviewErr
 from backend.models.enums import EventType, Outcome, Severity
 from backend.models.findings import Finding
 from backend.observability.events import emit_agent_event, emit_span
-from backend.prompts.registry import get_system_prompt, get_user_prompt, render_prompt
+from backend.prompts.registry import (
+    get_system_prompt,
+    get_user_prompt,
+    prompt_version,
+    render_prompt,
+)
 from backend.security.injection_guard import check_injection, sanitize_diff
 from backend.tools.llm_client import LlmClient, LlmResponse, get_llm_client
 
@@ -175,6 +180,7 @@ class BaseAgent(ABC):
                 tokens_out=llm_resp.tokens_out,
                 cost_usd=llm_resp.cost_usd,
                 latency_ms=llm_resp.latency_ms,
+                payload={"prompt_version": prompt_version(agent_name)},
                 conn=self._conn,
             )
 

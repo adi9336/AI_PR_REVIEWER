@@ -219,13 +219,33 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + security-engineering + production-readiness
 - **Token budget:** 50000
 
-<!-- M13+ (dashboard, CI/CD for AI, governance, continuous learning) get sliced after M12 lands. -->
+### M13 — CI/CD for AI: prompt versioning + CI gates + eval regression gate
+- **Outcome:** Every review becomes reproducible to the exact prompt bytes: each agent's templates get a
+  content-hash version, and every `llm.call` event records the `prompt_version` that ran (INV-6 audit
+  trail — a disputed finding must trace to "which prompt version ran"). A CI workflow (GitHub Actions)
+  and a local `scripts/ci_check.py` run the four gates — pytest, mypy strict, check_deps (INV-1/2), and
+  the M11 eval regression gate — so any prompt change that regresses the golden set blocks before merge
+  (the canary path).
+- **Phase:** 18 — CI/CD for AI
+- **Files:** `backend/prompts/**`, `backend/agents/base_agent.py`, `scripts/ci_check.py`, `.github/workflows/ci.yml`, `tests/test_prompts.py`
+- **Demo command:** `pytest tests/test_prompts.py -q && python scripts/ci_check.py`
+- **Success criteria:** (1) `prompt_version(agent)` is deterministic, differs per agent, and changes when
+  a template file changes; (2) `llm.call` events carry `payload.prompt_version` (asserted via
+  monkeypatched emitter); (3) `scripts/ci_check.py` runs all four gates and exits 0 on a clean tree,
+  non-zero when a gate fails (aggregation unit-tested); (4) `.github/workflows/ci.yml` exists and its
+  commands all pass locally (pytest+mypy+deps+eval gate; DB/LLM-gated tests skip without env).
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + production-readiness + llmops-ai-agents
+- **Token budget:** 50000
+
+<!-- M14+ (dashboard, governance, continuous learning) get sliced after M13 lands. -->
 
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-03 · M13 done — CI/CD for AI: prompt versioning (content-hash on every llm.call) + ci_check gates + GitHub Actions + REAL canary (agents vs golden set, live LLM) (14 tests) · L4 VERIFY APPROVE (round 2; round 1 caught vacuous gate) · 143 tests total
 - 2026-08-03 · M12 done — Tooling & Sandboxing: tool registry (5 gates) + capability scope + Docker sandbox (live isolation proofs) + model router (26 tests) · L4 VERIFY APPROVE (round 2) · 129 tests total
 - 2026-08-03 · M11 done — Evaluation: golden dataset + judge (precision/recall/F1) + regression gate (11 tests) · L4 VERIFY APPROVE · 103 tests total
 - 2026-08-03 · webhook verification — 401-on-missing-sig fix, pipeline persistence (findings/status/HITL/decision event), mock PR script (test_webhook.py) · live e2e verified (SQLi diff → escalate, finding persisted, HITL queued) · c25811c · 92 tests

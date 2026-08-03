@@ -1,0 +1,50 @@
+name: CI
+
+# M13 — CI/CD for AI (Phase 18). Every push/PR runs the four gates via
+# scripts/ci_check.py: pytest, mypy (strict), check_deps (INV-1/2) and the
+# M11 eval regression gate (golden-dataset sanity self-check — no secrets
+# needed). The REAL canary — running the actual agents against the golden
+# set with a live LLM — runs in the secrets-gated step below: a prompt
+# change that regresses the golden set fails the build before merge.
+# DB/LLM-gated tests skip when secrets are unset (design).
+
+"on":
+  push:
+  pull_request:
+
+jobs:
+  gates:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: CI gates (tests + mypy + deps + eval sanity gate)
+        run: python scripts/ci_check.py
+
+      # The tooling sandbox tests need Docker + the sandbox image; they
+      # self-skip when Docker is unavailable (docker_available()).
+      - name: Pull sandbox image
+        run: docker pull python:3.11-slim || true
+
+      - name: Tooling + sandbox isolation tests
+        run: python -m pytest tests/test_tooling.py -q -k sandbox
+
+      # THE CANARY: real agents vs the golden set. Runs only when an LLM
+      # key is present (workflow_dispatch / secrets-enabled repo). Fails
+      # the build when agent output regresses below min_f1.
+      - name: Canary — agents vs golden set (needs LLM key)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            python -m backend.evaluation.canary
+          else
+            echo "OPENAI_API_KEY not set — canary skipped (run in a secrets-enabled environment)"
+          fi

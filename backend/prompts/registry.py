@@ -10,6 +10,7 @@ without touching agent code.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -49,3 +50,16 @@ def get_system_prompt(agent_type: str) -> str:
 def get_user_prompt(agent_type: str) -> str:
     """Load the user prompt template for a given agent type."""
     return load_prompt(f"user_{agent_type}")
+
+
+def prompt_version(agent_type: str) -> str:
+    """Content-hash of the agent's system + user templates (8 hex chars).
+
+    The version IS the template bytes: any edit changes the hash, so the
+    audit trail can always resolve a recorded version back to the exact
+    prompt that ran (INV-6 — a disputed finding must trace to the prompt).
+    """
+    system = load_prompt(f"system_{agent_type}")
+    user = load_prompt(f"user_{agent_type}")
+    digest = hashlib.sha256((system + "\x00" + user).encode("utf-8")).hexdigest()
+    return digest[:8]
