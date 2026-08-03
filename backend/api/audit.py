@@ -41,6 +41,26 @@ async def summary(review_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/drift")
+async def drift(
+    window_days: int = 7,
+    baseline_days: int = 7,
+    threshold_pct: float = 20.0,
+) -> dict[str, Any]:
+    """Continuous-learning drift report (Phase 20)."""
+    from backend.observability.drift import detect_drift
+
+    try:
+        report = detect_drift(
+            window_days=window_days,
+            baseline_days=baseline_days,
+            threshold_pct=threshold_pct,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return report.as_dict()
+
+
 @router.get("/reviews/{review_id}/trace")
 async def trace(review_id: str) -> dict[str, Any]:
     """Full time-ordered events trace for a review (Phase 17 DX view)."""

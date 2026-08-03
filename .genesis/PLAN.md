@@ -78,7 +78,7 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + security-engineering + production-readiness
 - **Token budget:** 50000
 
-### M3 — Tiger schema + the three lanes provisioned
+### M3 — Tiger schema + the three lanes provisionedwhat
 - **Outcome:** `2026-06-tiger-init.sql` runs idempotently against Tiger Cloud, creating `code_chunks`
   (VECTOR(256) + DiskANN + FTS GIN), the `agent_events` hypertable, the continuous aggregates, and the
   relational truth tables.
@@ -260,10 +260,21 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 
 
 
+### M16 — Continuous Learning (Phase 20 — the finale)
+- **Outcome:** The system watches itself. `drift.py` compares the recent window against a baseline over the (already-live) continuous aggregates / agent_events: cost per review, avg LLM latency, LLM calls per review, error events, findings per review (real-world quality decay — the canary's production twin). Each metric has a bad direction (cost/latency/calls/errors UP, findings DOWN); drift past a threshold + baseline sample floor emits an alert event (anchored to a real review_id — agent_events.review_id is NOT NULL by INV-6, so system-level alerts are report-only by design). CLI + key-protected `GET /audit/drift` expose the report. Completes all 20 roadmap phases.
+- **Phase:** 20 — Continuous Learning
+- **Files:** `backend/observability/drift.py`, `backend/observability/alerting.py` (stub → real), `backend/api/audit.py` (+/audit/drift), `tests/test_drift.py`
+- **Demo command:** `pytest tests/test_drift.py -q` && `python -m backend.observability.drift`
+- **Success criteria:** (1) compute_delta pure math: up-direction +threshold → drifted, findings down-direction, baseline 0 → None, |delta| < threshold → not drifted, wrong direction → not drifted; (2) detect_drift over synthetic windows (DB-gated): cost_per_review +30% → drifted, findings -25% → drifted, min_baseline_reviews floor respected; (3) emit_alert writes an append-only agent_events row (event_type=alert, agent=alerting) visible via audit; (4) GET /audit/drift: 401 without key, 200 with key (DB-gated); (5) CLI prints per-metric report, exit 0.
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + production-readiness
+- **Token budget:** 50000
+
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-04 · M16 done — Continuous Learning (Phase 20, the finale): drift detection over live aggregates (cost/latency/calls/errors up-bad, findings down-bad), baseline sample floor gates the whole report, anchored alerts (EventType.ALERT, agent=alerting), CLI + key-protected GET /audit/drift (12 tests) · L4 VERIFY APPROVE round 1 · 179 tests total · **ALL 20 ROADMAP PHASES COMPLETE**
 - 2026-08-04 · M15 done — Frontend Dashboard (Phase 2 + 17 DX): Next.js 15 app (review list w/ RSC streaming, review detail, trace viewer, HITL queue) + GET /reviews + key-protected trace endpoint (5 API tests) · L4 VERIFY APPROVE round 1 (INFO notes only: stale footer count + test cleanup — polished) · 167 tests total · live demo: webhook→run→escalate rendered on all 4 pages
 - 2026-08-04 · M14 done — Governance: queryable audit (read-only, secret-masked) + per-finding explainability (finding + trace + prompt_version + decision) + fail-closed RBAC API key (19 tests) · L4 VERIFY APPROVE (round 2; round 1 caught list-of-dicts masking leak, non-ASCII 500, invalid-UUID 500) · 162 tests total · pushed to GitHub
 - 2026-08-03 · M13 done — CI/CD for AI: prompt versioning (content-hash on every llm.call) + ci_check gates + GitHub Actions + REAL canary (agents vs golden set, live LLM) (14 tests) · L4 VERIFY APPROVE (round 2; round 1 caught vacuous gate) · 143 tests total

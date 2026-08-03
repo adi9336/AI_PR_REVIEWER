@@ -56,6 +56,7 @@ class EventType(str, Enum):
     TOOL_CALL = "tool.call"
     DECISION = "decision"
     ESCALATION = "escalation"
+    ALERT = "alert"
 
 
 class Outcome(str, Enum):

@@ -110,7 +110,8 @@
         <tr><td>M13</td><td>CI/CD for AI: prompt versioning + CI gates + eval regression gate</td><td>18 · CI/CD for AI</td><td><code>pytest tests/test_prompts.py -q &amp;&amp; python scripts/ci_check.py</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
         <tr><td>M14</td><td>Governance: queryable audit + per-finding explainability + RBAC</td><td>15 · Governance</td><td><code>pytest tests/test_governance.py -q</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
         <tr><td>M15</td><td>Frontend Dashboard: review list, findings detail, trace viewer (DX), HITL queue</td><td>2 · Frontend (+17 DX)</td><td><code>npm run build</code> + <code>pytest tests/test_dashboard_api.py -q</code> + live smoke</td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
-        <tr><td>…</td><td>M16+ sliced after M15 lands (continuous learning, hardening)</td><td></td><td></td><td></td><td></td></tr>
+        <tr><td>M16</td><td>Continuous Learning: drift detection + alerting + /audit/drift (completes Phase 20)</td><td>20 · Continuous Learning</td><td><code>pytest tests/test_drift.py -q</code> + <code>python -m backend.observability.drift</code></td><td>L1, L4</td><td><span class="pill ok">done</span></td></tr>
+        <tr><td>…</td><td>M17+ hardening (ARQ worker, HITL disputes, threat model) — all 20 phases done after M16</td><td></td><td></td><td></td><td></td></tr>
       </tbody>
     </table>
     <p class="note">Total token budget = (n milestones × 50000). Update <span class="pill wip">wip</span> /
