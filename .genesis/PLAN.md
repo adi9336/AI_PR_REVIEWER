@@ -199,13 +199,34 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + llmops-ai-agents
 - **Token budget:** 50000
 
-<!-- M12+ (dashboard, CI/CD for AI, governance, continuous learning) get sliced after M11 lands. -->
+### M12 — Tooling & Sandboxing: tool registry + capability scope + Docker sandbox + model router
+- **Outcome:** Agents get *hands* that are safe to attach. A closed tool catalog (tool_registry) with
+  per-specialist least-privilege scoping (capability_scope), a Docker sandbox that isolates untrusted
+  code execution (no network, scrubbed secrets, resource limits, hard timeout, ephemeral), and a
+  model_router picking the model per step. Every tool call emits a `tool.call` event (INV-6); every
+  execution has an explicit timeout (INV-4).
+- **Phase:** 7 — Tooling & Sandboxing
+- **Files:** `backend/tools/**`, `tests/test_tooling.py`
+- **Demo command:** `pytest tests/test_tooling.py -q`
+- **Success criteria:** (1) registry rejects unknown tools and out-of-scope calls (CapabilityError) and
+  emits one `tool.call` event per call (INV-6); (2) capability matrix: security/quality/docs are
+  read-only, tests may run the sandboxed runner, none may write; (3) sandbox policy layer scrubs
+  secret-looking env vars (unit-testable, no Docker); (4) Docker layer — when Docker is available —
+  proves secrets do NOT reach the container, `--network none` blocks sockets, and a sleeping payload
+  is killed at the timeout (INV-4); (5) model_router resolves env override → step default → global
+  default.
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + security-engineering + production-readiness
+- **Token budget:** 50000
+
+<!-- M13+ (dashboard, CI/CD for AI, governance, continuous learning) get sliced after M12 lands. -->
 
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-03 · M12 done — Tooling & Sandboxing: tool registry (5 gates) + capability scope + Docker sandbox (live isolation proofs) + model router (26 tests) · L4 VERIFY APPROVE (round 2) · 129 tests total
 - 2026-08-03 · M11 done — Evaluation: golden dataset + judge (precision/recall/F1) + regression gate (11 tests) · L4 VERIFY APPROVE · 103 tests total
 - 2026-08-03 · webhook verification — 401-on-missing-sig fix, pipeline persistence (findings/status/HITL/decision event), mock PR script (test_webhook.py) · live e2e verified (SQLi diff → escalate, finding persisted, HITL queued) · c25811c · 92 tests
 - 2026-08-01 · M10 done — BudgetGuard hard-blocks from agent_health_1m · d5b94bb · 87 tests
