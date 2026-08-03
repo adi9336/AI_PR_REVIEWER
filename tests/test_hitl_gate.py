@@ -110,6 +110,38 @@ def test_no_findings_auto_post():
     assert result["overall_confidence"] == 1.0
 
 
+def test_all_agents_failed_goes_to_approval_queue():
+    """A run where every agent errored must NOT be reported as a clean
+    'no issues' auto_post — it is a failed run and needs human eyes."""
+    from backend.orchestrator.nodes import decide
+
+    state = _make_state()
+    state["merged_findings"] = []
+    state["errors"] = [
+        "security: LLM call failed after 3 retries: 401",
+        "quality: LLM call failed after 3 retries: 401",
+        "tests: LLM call failed after 3 retries: 401",
+        "docs: LLM call failed after 3 retries: 401",
+    ]
+    result = decide(state)
+    assert result["decision"] == "approval_queue", (
+        f"failed run must not auto_post, got {result['decision']}"
+    )
+    assert result["overall_confidence"] == 0.0
+
+
+def test_partial_agent_failure_still_routes_by_confidence():
+    """Some agents failing but others producing findings is a partial
+    review — route by the usual confidence rules."""
+    from backend.orchestrator.nodes import decide
+
+    state = _make_state()
+    state["merged_findings"] = [{"severity": "MEDIUM", "confidence": 0.9}]
+    state["errors"] = ["tests: LLM call failed after 3 retries: 401"]
+    result = decide(state)
+    assert result["decision"] == "auto_post"
+
+
 # ── 4. Agreement boost raises confidence ────────────────────────────────
 
 

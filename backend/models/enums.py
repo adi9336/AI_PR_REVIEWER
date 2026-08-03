@@ -35,6 +35,7 @@ class ReviewStatus(str, Enum):
     QUEUED = "queued"
     ESCALATED = "escalated"
     FAILED = "failed"
+    COMPLETED = "completed"
 
 
 class HitlState(str, Enum):

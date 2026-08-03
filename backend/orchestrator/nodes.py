@@ -164,6 +164,14 @@ def decide(state: OrchestratorState) -> dict[str, Any]:
       - Below threshold → approval_queue (row in hitl_reviews)
     """
     findings = state.get("merged_findings", [])
+    errors = state.get("errors", [])
+
+    # All agents failed → this is a failed run, not a clean "no issues"
+    # review. Route to the approval queue so a human sees it; never
+    # auto_post a run that produced nothing because everything errored.
+    if not findings and errors:
+        return {"overall_confidence": 0.0, "decision": "approval_queue"}
+
     if not findings:
         return {"overall_confidence": 1.0, "decision": "auto_post"}
 

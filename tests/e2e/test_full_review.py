@@ -312,3 +312,177 @@ def test_e2e_webhook_signature_validation():
     from backend.core.exceptions import PrReviewError
     with pytest.raises(PrReviewError, match="missing"):
         verify_signature(body, "", secret)
+
+
+# ── 6. Pipeline run persists the outcome to the DB ──────────────────────
+
+
+class _FakeGraph:
+    """Minimal graph stand-in returning a fixed state result."""
+
+    def __init__(self, result: dict) -> None:
+        self._result = result
+
+    def invoke(self, state: dict) -> dict:
+        return self._result
+
+
+def _claim_review(pr_number: int, conn) -> str:
+    from backend.reliability.idempotency import claim_delivery
+
+    review_id = claim_delivery(
+        str(uuid.uuid4()), "test-e2e", pr_number, conn=conn
+    )
+    return str(review_id)
+
+
+def test_pipeline_run_auto_post_persists_findings_status_and_decision():
+    """run_review_pipeline must write findings, update the review status,
+    and emit a decision event — the DB is the source of truth."""
+    from backend.webhook_receiver.router import run_review_pipeline
+    from backend.database.postgres import get_connection
+    from backend.database.repository import get_findings_for_review, get_review_record
+    from backend.observability.events import get_events_for_review
+
+    with get_connection() as conn:
+        review_id = _claim_review(4242, conn)
+
+        fake_result = {
+            "decision": "auto_post",
+            "merged_findings": [
+                {"agent_type": "security", "severity": "MEDIUM", "category": "xss",
+                 "summary": "Unescaped output", "file_path": "src/app.py",
+                 "line_start": 5, "line_end": 6, "suggestion": "escape it",
+                 "confidence": 0.85, "rationale": "user input rendered raw"},
+                {"agent_type": "quality", "severity": "LOW", "category": "style",
+                 "summary": "Line too long", "file_path": "src/app.py",
+                 "line_start": 9, "line_end": 9, "suggestion": "wrap it",
+                 "confidence": 0.6, "rationale": "pep8"},
+            ],
+            "overall_confidence": 0.725,
+            "errors": [],
+        }
+        with patch(
+            "backend.orchestrator.graph.build_graph",
+            return_value=_FakeGraph(fake_result),
+        ):
+            out = run_review_pipeline(
+                review_id, diff="--- a/src/db.py", repo="test-e2e",
+                pr_number=4242, conn=conn,
+            )
+
+        assert out["decision"] == "auto_post"
+        assert out["findings_count"] == 2
+
+        record = get_review_record(review_id, conn=conn)
+        assert record["status"] == "completed", "no github client → completed, not posted"
+        assert float(record["overall_confidence"]) == 0.725
+
+        findings = get_findings_for_review(review_id, conn=conn)
+        assert len(findings) == 2
+        assert {f["agent_type"] for f in findings} == {"security", "quality"}
+
+        events = get_events_for_review(review_id, conn=conn)
+        assert any(e["event_type"] == "decision" for e in events), (
+            "the run must leave a decision event in the trace"
+        )
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM finding_records WHERE review_id = %s", (review_id,))
+            cur.execute("DELETE FROM pr_review_records WHERE id = %s", (review_id,))
+
+
+def test_pipeline_run_escalate_enqueues_hitl():
+    """A CRITICAL finding → escalate → status escalated + hitl row."""
+    from backend.webhook_receiver.router import run_review_pipeline
+    from backend.database.postgres import get_connection
+    from backend.database.repository import get_review_record
+
+    with get_connection() as conn:
+        review_id = _claim_review(4243, conn)
+
+        fake_result = {
+            "decision": "escalate",
+            "merged_findings": [
+                {"agent_type": "security", "severity": "CRITICAL", "category": "sql-injection",
+                 "summary": "SQLi", "file_path": "src/db.py", "line_start": 10, "line_end": 12,
+                 "suggestion": "parameterize", "confidence": 0.95, "rationale": "concat"},
+            ],
+            "overall_confidence": 0.0,
+            "errors": [],
+        }
+        with patch(
+            "backend.orchestrator.graph.build_graph",
+            return_value=_FakeGraph(fake_result),
+        ):
+            out = run_review_pipeline(
+                review_id, diff="--- a/src/db.py", repo="test-e2e",
+                pr_number=4243, conn=conn,
+            )
+
+        assert out["decision"] == "escalate"
+
+        record = get_review_record(review_id, conn=conn)
+        assert record["status"] == "escalated"
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, reason, state FROM hitl_reviews "
+                "WHERE review_id = %s ORDER BY created_at DESC LIMIT 1",
+                (review_id,),
+            )
+            row = cur.fetchone()
+        assert row is not None, "escalated review must be in the HITL queue"
+        assert row[1] == "critical_finding"
+        assert row[2] == "queued"
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM hitl_reviews WHERE review_id = %s", (review_id,))
+            cur.execute("DELETE FROM finding_records WHERE review_id = %s", (review_id,))
+            cur.execute("DELETE FROM pr_review_records WHERE id = %s", (review_id,))
+
+
+def test_pipeline_run_all_agents_failed_queues_with_agent_failure():
+    """All agents failing → approval_queue with reason agent_failure,
+    never a clean auto_post."""
+    from backend.webhook_receiver.router import run_review_pipeline
+    from backend.database.postgres import get_connection
+    from backend.database.repository import get_review_record
+
+    with get_connection() as conn:
+        review_id = _claim_review(4244, conn)
+
+        fake_result = {
+            "decision": "approval_queue",
+            "merged_findings": [],
+            "overall_confidence": 0.0,
+            "errors": ["security: LLM call failed after 3 retries: 401"],
+        }
+        with patch(
+            "backend.orchestrator.graph.build_graph",
+            return_value=_FakeGraph(fake_result),
+        ):
+            out = run_review_pipeline(
+                review_id, diff="--- a/src/db.py", repo="test-e2e",
+                pr_number=4244, conn=conn,
+            )
+
+        assert out["decision"] == "approval_queue"
+        assert out["errors"], "errors must be surfaced in the response"
+
+        record = get_review_record(review_id, conn=conn)
+        assert record["status"] == "queued"
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT reason FROM hitl_reviews "
+                "WHERE review_id = %s ORDER BY created_at DESC LIMIT 1",
+                (review_id,),
+            )
+            row = cur.fetchone()
+        assert row is not None
+        assert row[0] == "agent_failure"
+
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM hitl_reviews WHERE review_id = %s", (review_id,))
+            cur.execute("DELETE FROM pr_review_records WHERE id = %s", (review_id,))

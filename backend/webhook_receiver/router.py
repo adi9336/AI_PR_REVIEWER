@@ -18,8 +18,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Request  # type: ignore[import-not-found]
-from fastapi.responses import JSONResponse  # type: ignore[import-not-found]
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from backend.core.exceptions import (
     IdempotencyError,
@@ -35,7 +35,7 @@ from backend.webhook_receiver.validator import verify_signature
 router = APIRouter()
 
 
-@router.post("/webhook/github")  # type: ignore[untyped-decorator]
+@router.post("/webhook/github")
 async def github_webhook(request: Request) -> JSONResponse:
     """Receive a GitHub pull_request webhook and kick off a review."""
     body = await request.body()
@@ -54,7 +54,16 @@ async def github_webhook(request: Request) -> JSONResponse:
             content={"error": "webhook secret not configured"},
         )
 
-    if not verify_signature(body, signature, secret):
+    try:
+        sig_valid = verify_signature(body, signature, secret)
+    except PrReviewError as exc:
+        # Missing / malformed signature header — reject before any work
+        return JSONResponse(
+            status_code=401,
+            content={"error": str(exc)},
+        )
+
+    if not sig_valid:
         return JSONResponse(
             status_code=401,
             content={"error": "invalid signature"},
@@ -145,6 +154,7 @@ def run_review_pipeline(
 
     decision = result.get("decision", "approval_queue")
     findings = result.get("merged_findings", [])
+    errors = result.get("errors", [])
 
     # Post to GitHub (if decision is auto_post)
     github_review_id: int | None = None
@@ -164,11 +174,62 @@ def run_review_pipeline(
             )
             decision = "approval_queue"
 
+    # ── Persist the run outcome — the DB is the source of truth ──
+    from backend.database.repository import insert_finding, update_review_status
+    from backend.hitl.queue import enqueue
+    from backend.models.enums import EventType, Outcome
+
+    overall_confidence = result.get("overall_confidence")
+
+    for f in findings:
+        insert_finding(review_id, f, conn=conn)
+
+    if decision == "auto_post":
+        if github_review_id is not None:
+            update_review_status(
+                review_id, "posted",
+                overall_confidence=overall_confidence,
+                github_review_id=github_review_id, conn=conn,
+            )
+        else:
+            # No GitHub client in this run (e.g. manual /reviews/{id}/run) —
+            # the review itself is finished even though nothing was posted.
+            update_review_status(
+                review_id, "completed",
+                overall_confidence=overall_confidence, conn=conn,
+            )
+    elif decision == "approval_queue":
+        update_review_status(
+            review_id, "queued", overall_confidence=overall_confidence, conn=conn,
+        )
+        enqueue(review_id, "agent_failure" if errors else "low_confidence", conn=conn)
+    else:  # escalate
+        update_review_status(
+            review_id, "escalated", overall_confidence=overall_confidence, conn=conn,
+        )
+        enqueue(review_id, "critical_finding", conn=conn)
+
+    # Decision event for the trace (the aggregator's verdict)
+    if decision == "escalate":
+        outcome = Outcome.ESCALATED
+    elif decision == "approval_queue":
+        outcome = Outcome.CRITICAL_BLOCK if errors else Outcome.REQUEST_CHANGES
+    else:
+        outcome = Outcome.APPROVED
+    emit_agent_event(
+        str(review_id), "aggregator", EventType.DECISION,
+        outcome=outcome,
+        confidence=overall_confidence,
+        payload={"decision": decision, "errors": errors[:5]},
+        conn=conn,
+    )
+
     return {
         "review_id": str(review_id),
         "decision": decision,
         "findings_count": len(findings),
         "github_review_id": github_review_id,
+        "errors": errors,
     }
 
 

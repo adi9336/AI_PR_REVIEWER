@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Load .env at import time
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "backend", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from backend.database.postgres import get_connection
 from backend.database.repository import get_findings_for_review, get_review_record
@@ -44,13 +44,13 @@ app.include_router(webhook_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+async def health() -> JSONResponse:
     """Health check — verifies Tiger Cloud connectivity."""
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
-        return {"status": "ok", "database": "connected"}
+        return JSONResponse({"status": "ok", "database": "connected"})
     except Exception as exc:
         return JSONResponse(
             status_code=503,
@@ -82,7 +82,7 @@ async def get_review(review_id: str) -> dict[str, Any]:
             "delivery_uuid": record["delivery_uuid"],
             "status": record["status"],
             "overall_confidence": float(record["overall_confidence"])
-            if record["overall_confidence"]
+            if record["overall_confidence"] is not None
             else None,
             "github_review_id": record["github_review_id"],
             "created_at": str(record["created_at"]) if record["created_at"] else None,
@@ -99,7 +99,7 @@ async def get_review(review_id: str) -> dict[str, Any]:
                 "line_start": f["line_start"],
                 "line_end": f["line_end"],
                 "suggestion": f["suggestion"],
-                "confidence": float(f["confidence"]) if f["confidence"] else None,
+                "confidence": float(f["confidence"]) if f["confidence"] is not None else None,
                 "rationale": f["rationale"],
             }
             for f in findings
