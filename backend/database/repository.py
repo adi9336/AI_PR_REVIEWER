@@ -161,3 +161,23 @@ def get_findings_for_review(review_id: UUID | str, *, conn: Any = None) -> list[
         }
         for r in rows
     ]
+
+
+def list_reviews(*, limit: int = 50, conn: Any = None) -> list[dict[str, Any]]:
+    """Recent reviews, newest first — the dashboard home feed (M15)."""
+
+    def _run(cursor: Any) -> list[dict[str, Any]]:
+        cursor.execute(
+            "SELECT id, repo, pr_number, status, overall_confidence, created_at "
+            "FROM pr_review_records ORDER BY created_at DESC LIMIT %s",
+            (max(1, min(int(limit), 200)),),
+        )
+        cols = [d[0] for d in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    if conn is not None:
+        with conn.cursor() as cur:
+            return _run(cur)
+    with get_connection() as c:
+        with c.cursor() as cur:
+            return _run(cur)

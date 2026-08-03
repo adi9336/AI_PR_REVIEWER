@@ -41,6 +41,16 @@ async def summary(review_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/reviews/{review_id}/trace")
+async def trace(review_id: str) -> dict[str, Any]:
+    """Full time-ordered events trace for a review (Phase 17 DX view)."""
+    try:
+        events = query_audit(review_id=review_id, limit=1000)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"review_id": review_id, "events": events, "count": len(events)}
+
+
 @router.get("/reviews/{review_id}/explain/{finding_id}")
 async def explain(review_id: str, finding_id: str) -> dict[str, Any]:
     """Reconstruct why a finding exists (finding + trace + prompt versions)."""

@@ -248,13 +248,23 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Skills:** canon + tdd + security-engineering + production-readiness
 - **Token budget:** 50000
 
-<!-- M15+ (dashboard, continuous learning) get sliced after M14 lands. -->
+### M15 — Frontend Dashboard (Phase 2 + 17 DX)
+- **Outcome:** The product gets a face. A Next.js dashboard (frontend/) consumes the existing API server-side: review list, review detail (findings + decision), events trace viewer (Phase 17 DX), HITL queue. Gate: dashboard shell renders + streaming wired (RSC Suspense). Two small backend additions make it possible: `GET /reviews` (list) and `GET /audit/reviews/{id}/trace` (key-protected trace, reuses query_audit).
+- **Phase:** 2 — Frontend Engineering (+ 17 Developer Experience: trace viewer)
+- **Files:** `frontend/**` (next.js 15 app, TS, app router), `backend/main.py` (+GET /reviews), `backend/database/repository.py` (+list_reviews), `backend/api/audit.py` (+trace), `tests/test_dashboard_api.py`
+- **Demo command:** `npm run build` (frontend/) && `pytest tests/test_dashboard_api.py -q` && live smoke: `next start` + curl / → 200
+- **Success criteria:** (1) GET /reviews lists recent reviews newest-first (DB-gated test); (2) GET /audit/reviews/{id}/trace returns masked time-ordered trace, 401 without key, 400 bad UUID (TestClient); (3) `npm run build` compiles all pages (compile gate); (4) live smoke: dashboard pages return 200 and render expected content (review list rows, findings, trace timeline, hitl queue); (5) dashboard fetches server-side only (no CORS, API key stays server-side).
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + production-readiness
+- **Token budget:** 60000
+
 
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-04 · M15 done — Frontend Dashboard (Phase 2 + 17 DX): Next.js 15 app (review list w/ RSC streaming, review detail, trace viewer, HITL queue) + GET /reviews + key-protected trace endpoint (5 API tests) · L4 VERIFY APPROVE round 1 (INFO notes only: stale footer count + test cleanup — polished) · 167 tests total · live demo: webhook→run→escalate rendered on all 4 pages
 - 2026-08-04 · M14 done — Governance: queryable audit (read-only, secret-masked) + per-finding explainability (finding + trace + prompt_version + decision) + fail-closed RBAC API key (19 tests) · L4 VERIFY APPROVE (round 2; round 1 caught list-of-dicts masking leak, non-ASCII 500, invalid-UUID 500) · 162 tests total · pushed to GitHub
 - 2026-08-03 · M13 done — CI/CD for AI: prompt versioning (content-hash on every llm.call) + ci_check gates + GitHub Actions + REAL canary (agents vs golden set, live LLM) (14 tests) · L4 VERIFY APPROVE (round 2; round 1 caught vacuous gate) · 143 tests total
 - 2026-08-03 · M12 done — Tooling & Sandboxing: tool registry (5 gates) + capability scope + Docker sandbox (live isolation proofs) + model router (26 tests) · L4 VERIFY APPROVE (round 2) · 129 tests total

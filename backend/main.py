@@ -28,7 +28,11 @@ from pydantic import BaseModel
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from backend.database.postgres import get_connection
-from backend.database.repository import get_findings_for_review, get_review_record
+from backend.database.repository import (
+    get_findings_for_review,
+    get_review_record,
+    list_reviews,
+)
 from backend.hitl.queue import list_queued
 from backend.observability.events import get_events_for_review
 from backend.webhook_receiver.router import router as webhook_router
@@ -60,6 +64,29 @@ async def health() -> JSONResponse:
             status_code=503,
             content={"status": "degraded", "error": str(exc)[:200]},
         )
+
+
+@app.get("/reviews")
+async def list_reviews_endpoint(limit: int = 50) -> dict[str, Any]:
+    """Recent reviews, newest first — the dashboard home feed."""
+    with get_connection() as conn:
+        rows = list_reviews(limit=limit, conn=conn)
+    return {
+        "reviews": [
+            {
+                "id": str(r["id"]),
+                "repo": r["repo"],
+                "pr_number": r["pr_number"],
+                "status": r["status"],
+                "overall_confidence": float(r["overall_confidence"])
+                if r["overall_confidence"] is not None
+                else None,
+                "created_at": str(r["created_at"]) if r["created_at"] else None,
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }
 
 
 @app.get("/reviews/{review_id}")
