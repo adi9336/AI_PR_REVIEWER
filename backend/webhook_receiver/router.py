@@ -92,7 +92,7 @@ async def github_webhook(request: Request) -> JSONResponse:
                     content={"status": "duplicate", "delivery_uuid": delivery_uuid},
                 )
 
-            # 4. Claim the delivery
+            # 4. Claim the delivery (the durable record — source of truth)
             review_id = claim_delivery(
                 delivery_uuid, repo, pr_number, head_sha, conn=conn
             )
@@ -102,14 +102,41 @@ async def github_webhook(request: Request) -> JSONResponse:
             content={"status": "duplicate", "delivery_uuid": delivery_uuid},
         )
 
-    # 5-6: Run the pipeline (synchronously for tests; in production,
-    #   this would enqueue to Redis/ARQ and return 200 immediately)
+    # 5. Enqueue the pipeline job (M17 — production async path). Fail-soft:
+    #    Redis down → still accept the claim; the review stays pending and
+    #    remains runnable via POST /reviews/{id}/run. A queue failure never
+    #    loses a review.
+    from backend.job_queue.arq_worker import enqueue_review
+
+    diff = getattr(webhook, "diff", "") or ""  # optional embedded diff (test payloads)
+    queued = False
+    job_id: str | None = None
+    try:
+        job_id = await enqueue_review(review_id, diff, repo, pr_number, head_sha)
+        queued = True
+    except ConnectionError:
+        emit_agent_event(
+            str(review_id), "job_queue", "tool.call",
+            payload={"status": "error", "error": "redis unavailable — review enqueued in postgres only"},
+        )
+    except OSError:
+        # Defense in depth: raw network errors that escape the normalization
+        # (enqueue_review raises the builtin ConnectionError on redis-py
+        # failures, but a socket error can surface as OSError directly).
+        emit_agent_event(
+            str(review_id), "job_queue", "tool.call",
+            payload={"status": "error", "error": "queue unavailable (OSError) — review enqueued in postgres only"},
+        )
+
+    # 6. Return 202 fast (the worker handles the heavy lifting)
     return JSONResponse(
         status_code=202,
         content={
             "status": "accepted",
             "review_id": str(review_id),
             "delivery_uuid": delivery_uuid,
+            "queued": queued,
+            "job_id": job_id,
         },
     )
 

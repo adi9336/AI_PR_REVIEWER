@@ -27,3 +27,11 @@ class PullRequestWebhook(BaseModel):
     delivery_uuid: str = Field(description="X-GitHub-Delivery header")
     repository: GitHubRepo
     pull_request: GitHubPR
+    diff: str = Field(
+        default="",
+        description=(
+            "Optional embedded PR diff. GitHub webhooks don't carry diffs — "
+            "the worker fetches them via get_pr_diff() when this is empty. "
+            "Test payloads embed the diff to exercise the full path offline."
+        ),
+    )

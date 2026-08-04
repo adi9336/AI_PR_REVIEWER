@@ -66,6 +66,7 @@ def parse_webhook(body: bytes | str, headers: dict[str, str]) -> PullRequestWebh
         delivery_uuid=delivery_uuid,
         repository=repo,
         pull_request=pr,
+        diff=payload.get("diff", "") or "",
     )
 
 

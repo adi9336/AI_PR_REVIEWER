@@ -268,12 +268,21 @@ complexity are paid down by ADR-003 (one store, not three) and ADR-004 (BudgetGu
 - **Success criteria:** (1) compute_delta pure math: up-direction +threshold → drifted, findings down-direction, baseline 0 → None, |delta| < threshold → not drifted, wrong direction → not drifted; (2) detect_drift over synthetic windows (DB-gated): cost_per_review +30% → drifted, findings -25% → drifted, min_baseline_reviews floor respected; (3) emit_alert writes an append-only agent_events row (event_type=alert, agent=alerting) visible via audit; (4) GET /audit/drift: 401 without key, 200 with key (DB-gated); (5) CLI prints per-metric report, exit 0.
 - **Loops:** L1, L4
 - **Skills:** canon + tdd + production-readiness
+### M17 — ARQ Async Worker (Phase 8 completion — the production webhook path)
+- **Outcome:** Reviews become automatic. The webhook claims a delivery then ENQUEUES a pipeline job to Redis (arq); the worker runs the M9 pipeline (agents → aggregator → decide → persist). No more manual `POST /reviews/{id}/run`. Redis down = fail-soft: the claim is accepted, the review stays pending and manually runnable — a queue failure never loses a review.
+- **Phase:** 8 — Async / ARQ worker (production path)
+- **Files:** `backend/job_queue/arq_worker.py` (stub → real: pipeline_job + WorkerSettings + enqueue_review), `backend/webhook_receiver/router.py` (+enqueue after claim), `tests/test_job_queue.py`, `backend/.env` (+REDIS_URL local)
+- **Demo command:** `pytest tests/test_job_queue.py -q` && live: webhook → 202 queued → worker runs → review escalates WITHOUT manual /run
+- **Success criteria:** (1) enqueue_review publishes a job (unit: monkeypatched arq pool captures review_id/diff/repo/pr/head_sha); (2) pipeline_job calls run_review_pipeline with the right args and survives pipeline exceptions (emits an error event, no crash); (3) webhook enqueues after claim and still returns 202; Redis-down → 202 accepted + fail-soft logged, review still runnable; (4) live (redis container, docker-gated): webhook → worker auto-pipeline → review leaves 'pending' (escalated/queued), no manual run; (5) mypy/deps clean.
+- **Loops:** L1, L4
+- **Skills:** canon + tdd + production-readiness
 - **Token budget:** 50000
 
 ---
 
 ## Progress (loops append here on milestone completion — newest last)
 
+- 2026-08-04 · M17 done — ARQ Async Worker (Phase 8 production path): webhook claims (Postgres) then ENQUEUES; arq worker auto-runs the M9 pipeline (no manual /run); fail-soft (Redis down → 202 queued:false + anchored error event, never 500/lost); PullRequestWebhook.diff + GitHubClient.get_pr_diff fallback (8 tests) · L4 VERIFY APPROVE round 3 (rounds 1-2 REJECT caught the redis-exception class: builtin-vs-redis ConnectionError, then enqueue_job TOCTOU — both normalized) · 187 tests total · live: webhook→queued→worker→escalated
 - 2026-08-04 · M16 done — Continuous Learning (Phase 20, the finale): drift detection over live aggregates (cost/latency/calls/errors up-bad, findings down-bad), baseline sample floor gates the whole report, anchored alerts (EventType.ALERT, agent=alerting), CLI + key-protected GET /audit/drift (12 tests) · L4 VERIFY APPROVE round 1 · 179 tests total · **ALL 20 ROADMAP PHASES COMPLETE**
 - 2026-08-04 · M15 done — Frontend Dashboard (Phase 2 + 17 DX): Next.js 15 app (review list w/ RSC streaming, review detail, trace viewer, HITL queue) + GET /reviews + key-protected trace endpoint (5 API tests) · L4 VERIFY APPROVE round 1 (INFO notes only: stale footer count + test cleanup — polished) · 167 tests total · live demo: webhook→run→escalate rendered on all 4 pages
 - 2026-08-04 · M14 done — Governance: queryable audit (read-only, secret-masked) + per-finding explainability (finding + trace + prompt_version + decision) + fail-closed RBAC API key (19 tests) · L4 VERIFY APPROVE (round 2; round 1 caught list-of-dicts masking leak, non-ASCII 500, invalid-UUID 500) · 162 tests total · pushed to GitHub

@@ -1,10 +1,10 @@
 # CURRENT
 - active_loop: NONE
-- target: M17 hardening — ARQ async worker first, then HITL disputes, threat model, logging, routing_advisor (partials)
+- target: M18+ — remaining partials (HITL disputes, threat model, logging, routing_advisor, dashboard drift page)
 - iteration: 0
-- last_gate: M16 DONE — L4 VERIFY APPROVE (round 1, 2026-08-04)
-- last_action: M16 complete — Continuous Learning (Phase 20): drift detection + anchored alerts + /audit/drift; **ALL 20 ROADMAP PHASES COMPLETE**; spine updated
-- next_action: build M17 — ARQ async worker (webhook → queue → worker → pipeline; arq 0.28 + redis-py already in venv; redis image needs pull)
+- last_gate: M17 DONE — L4 VERIFY APPROVE (round 3, 2026-08-04)
+- last_action: M17 complete — ARQ Async Worker (webhook → queue → worker → auto-pipeline, fail-soft); spine updated
+- next_action: slice M18 (partials) after user picks — or env reconciliation (duplicate uvicorn/arq/redis processes from earlier sessions)
 - model: gpt-4o-mini (backend agents) · kimi-k3/hy3 (Hermes loop, opencode-go)
 - tokens_used: 0
 - tokens_budget: 50000
@@ -13,11 +13,11 @@
 ## Notes
 - Design source of truth: https://www.antern.co/blogs/production-grade-ai-pr-review-agent
 - Remote: https://github.com/adi9336/AI_PR_REVIEWER (public) — push after each milestone; GCM + credential store
-- Stack: Python 3.11+ / FastAPI / LangGraph / Tiger Cloud / OpenAI (gpt-4o-mini) / Docker (sandbox) / Next.js 15 (frontend/)
-- 179 tests all green (167 through M15 + 12 M16 drift) · mypy 92 clean · check_deps 92 clean
-- M16: drift = window vs baseline (5 metrics, direction-aware, floor gates whole report); alerts anchored to real review_ids (INV-6 — system-level drift is report-only); /audit/drift key-protected; CLI exit 0
-- Roadmap: ALL 20 PHASES COMPLETE. Remaining = partials: ARQ worker (backend/job_queue/arq_worker.py), HITL disputes (hitl/dispute.py + feedback.py), threat model (security/threat_model.md), logging (observability/logging.py), routing_advisor (economics/routing_advisor.py); dashboard extras: drift page, explain page
-- M17 env facts: arq 0.28.0 + redis-py in venv (pyproject deps); Docker UP; no redis image yet (pull redis:7-alpine); webhook claims then returns 202 — enqueue wiring makes reviews automatic
-- L4 discipline: rounds-1 REJECTs caught real defects in M12 (dead sandbox gate), M13 (vacuous eval gate), M14 (masking leak, non-ASCII 500, invalid-UUID 500); M15/M16 APPROVE round 1
-- Env quirks: stale uvicorn on :8000 silently serves OLD code — kill + restart before live demos; frontend/.env.local (gitignored) holds API_BASE_URL + GOVERNANCE_API_KEY synced with backend/.env
+- Stack: Python 3.11+ / FastAPI / LangGraph / Tiger Cloud / OpenAI (gpt-4o-mini) / Docker (sandbox + redis) / Next.js 15 (frontend/) / arq 0.28
+- 187 tests all green (179 through M16 + 8 M17 job_queue) · mypy 92 clean · check_deps 92 clean
+- M17: webhook claims (Postgres durable) → enqueues (arq) → worker auto-runs M9 pipeline; fail-soft = 202 queued:false + anchored error event (payload.status=error, drift shape); enqueue_review normalizes ALL redis failures (create_pool AND enqueue_job TOCTOU) → builtin ConnectionError; REDIS_URL in backend/.env
+- L4 lesson (M17, 3 rounds): redis-py exceptions are RedisError subclasses, NOT builtin ConnectionError — tests must raise the REAL exception class; verify failure paths at HTTP level, not just unit level
+- Env: native Windows redis on ::1:6379 shadows docker hermes-redis for localhost (works; docker container redundant); a system-python311 uvicorn may serve :8000 — reconcile duplicates before the next milestone
+- Roadmap: ALL 20 PHASES COMPLETE. Remaining = partials: HITL disputes (hitl/dispute.py + feedback.py), threat model (security/threat_model.md), logging (observability/logging.py), routing_advisor (economics/routing_advisor.py); dashboard extras: drift page, explain page
+- L4 discipline: rounds-1 REJECTs caught real defects in M12 (dead sandbox gate), M13 (vacuous eval gate), M14 (masking leak, non-ASCII 500, invalid-UUID 500), M17 ×2 (redis exception class ×2)
 - M2 folded into M9 · backend/.env uses gpt-4o-mini (LlmClient = OpenAI direct) · M13 canary chirp-proven
