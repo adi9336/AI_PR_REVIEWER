@@ -326,6 +326,37 @@ def test_ping_event_acknowledged_no_claim(monkeypatch):
                 assert cur.fetchone()[0] == 0
 
 
+def test_real_github_payload_shape_parses():
+    """LIVE-DEPLOY catch: real GitHub PR payloads nest OBJECTS in
+    pull_request.head/base (user/repo with login/id/...), not strings.
+    Parsing must succeed and get_head_sha must still read head.sha."""
+    from backend.integrations.github_models import PullRequestWebhook
+
+    head = {
+        "label": "adi9336:demo/vulnerable-sqli",
+        "ref": "demo/vulnerable-sqli",
+        "sha": "deadbeef1234567890",
+        "user": {"login": "adi9336", "id": 148680267, "type": "User"},
+        "repo": {"id": 1322057409, "name": "AI_PR_REVIEWER", "full_name": "adi9336/AI_PR_REVIEWER"},
+    }
+    base = {
+        "label": "adi9336:master",
+        "ref": "master",
+        "sha": "c2b50ed",
+        "user": {"login": "adi9336", "id": 148680267, "type": "User"},
+        "repo": {"id": 1322057409, "name": "AI_PR_REVIEWER", "full_name": "adi9336/AI_PR_REVIEWER"},
+    }
+    wh = PullRequestWebhook(
+        action="opened",
+        delivery_uuid=str(uuid.uuid4()),
+        repository={"name": "AI_PR_REVIEWER", "full_name": "adi9336/AI_PR_REVIEWER"},
+        pull_request={"number": 1, "title": "Demo", "body": "b", "head": head, "base": base},
+    )
+    assert wh.pull_request.head["sha"] == "deadbeef1234567890"
+    assert wh.pull_request.base["ref"] == "master"
+    assert isinstance(wh.pull_request.head["user"], dict)
+
+
 # ── 4. Live: redis + worker job (docker-gated) ──────────────────────────
 
 

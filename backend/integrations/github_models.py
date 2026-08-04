@@ -5,6 +5,8 @@ Only the fields we actually need from the PR webhook payload.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -17,8 +19,11 @@ class GitHubPR(BaseModel):
     number: int
     title: str = ""
     body: str | None = None
-    head: dict[str, str] = Field(default_factory=dict, description="sha, ref, label")
-    base: dict[str, str] = Field(default_factory=dict, description="sha, ref, label")
+    # Real GitHub payloads nest OBJECTS here (head.user, head.repo, base.user,
+    # base.repo are dicts with login/id/...). We only read sha/ref/label, so
+    # the containers are permissive.
+    head: dict[str, Any] = Field(default_factory=dict, description="sha, ref, label")
+    base: dict[str, Any] = Field(default_factory=dict, description="sha, ref, label")
 
 
 class PullRequestWebhook(BaseModel):
