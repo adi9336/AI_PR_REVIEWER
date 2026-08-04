@@ -15,6 +15,7 @@ Tests:
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from pathlib import Path
@@ -280,6 +281,49 @@ def test_webhook_enqueues_after_claim_and_fails_soft(monkeypatch):
     )
     assert r2.status_code == 202, "queue down must still accept the claim"
     assert r2.json()["queued"] is False
+
+
+def test_ping_event_acknowledged_no_claim(monkeypatch):
+    """GitHub pings on webhook creation — the router must 200 pong and
+    never claim a delivery for a ping body (no pull_request)."""
+    import hashlib
+    import hmac
+
+    from fastapi.testclient import TestClient
+
+    from backend.main import app
+    from backend.database.postgres import get_connection
+
+    secret = "ping-test-secret"
+    payload = {"zen": "Keep it logically awesome.", "hook_id": 42}
+    body = json.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    delivery = str(uuid.uuid4())
+
+
+    monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", secret)
+    r = TestClient(app).post(
+        "/webhook/github",
+        content=body,
+        headers={
+            "X-GitHub-Event": "ping",
+            "X-GitHub-Delivery": delivery,
+            "X-Hub-Signature-256": sig,
+            "Content-Type": "application/json",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "pong"
+
+    # no review row must exist for this delivery
+    if os.getenv("TIGER_DATABASE_URL"):
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM pr_review_records WHERE delivery_uuid = %s",
+                    (delivery,),
+                )
+                assert cur.fetchone()[0] == 0
 
 
 # ── 4. Live: redis + worker job (docker-gated) ──────────────────────────

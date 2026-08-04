@@ -69,6 +69,14 @@ async def github_webhook(request: Request) -> JSONResponse:
             content={"error": "invalid signature"},
         )
 
+    # GitHub sends a signed "ping" event when a webhook is created/updated —
+    # acknowledge it before parsing (a ping body has no pull_request).
+    if headers_lower.get("x-github-event", "") == "ping":
+        return JSONResponse(
+            status_code=200,
+            content={"status": "pong", "delivery_uuid": headers_lower.get("x-github-delivery", "")},
+        )
+
     # 2. Parse
     try:
         webhook = parse_webhook(body, headers_dict)
