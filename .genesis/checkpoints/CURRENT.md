@@ -1,10 +1,10 @@
 # CURRENT
 - active_loop: NONE
-- target: NONE — **PROJECT SHIPPED** (2026-08-04): all 20 roadmap phases + all 18 milestones + every stub complete
+- target: NONE — **PROJECT SHIPPED + LIVE-DEPLOYED** (2026-08-04): all 20 roadmap phases + 18 milestones + every stub complete; wired to the real repo adi9336/AI_PR_REVIEWER (webhook 660969576 → cloudflared tunnel → worker) and dogfooded on PR #1 (escalated: CRITICAL sql-injection + anti-patterns + HIGH missing-test)
 - iteration: 0
 - last_gate: M18 DONE — L4 VERIFY APPROVE (round 1, 2026-08-04)
-- last_action: M18 complete — disputes/feedback events + HITL API, JSON logging, routing advisor, threat model, dashboard /drift + explain pages, SETUP.md; spine updated
-- next_action: none required — deploy per SETUP.md (GitHub webhook → uvicorn + arq worker + dashboard); optional future work only (see Notes)
+- last_action: LIVE DEPLOY — real webhook on AI_PR_REVIEWER, GITHUB_TOKEN in backend/.env (gitignored), ping/payload-shape deploy fixes shipped (7511aa9, fc33c6e); PR #1 + demo/vulnerable-sqli branch left as demo artifacts
+- next_action: optional — permanent host (replace tunnel), supervisor for the arq worker (it crashed on redis outage), keep or close PR #1
 - model: gpt-4o-mini (backend agents) · kimi-k3/hy3 (Hermes loop, opencode-go)
 - tokens_used: 0
 - tokens_budget: 50000
