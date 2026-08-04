@@ -63,6 +63,33 @@ export interface HitlItem {
   created_at: string;
 }
 
+export interface DriftMetric {
+  metric: string;
+  direction: string;
+  window_value: number | null;
+  baseline_value: number | null;
+  delta_pct: number | null;
+  drifted: boolean;
+}
+
+export interface DriftReport {
+  window_days: number;
+  baseline_days: number;
+  threshold_pct: number;
+  min_baseline_reviews: number;
+  baseline_reviews: number;
+  any_drift: boolean;
+  metrics: DriftMetric[];
+}
+
+export interface ExplainResponse {
+  finding: Record<string, unknown>;
+  review: Record<string, unknown>;
+  prompt_versions: string[];
+  decision_events: Array<Record<string, unknown>>;
+  trace: Array<Record<string, unknown>>;
+}
+
 const API_BASE = process.env.API_BASE_URL ?? "http://localhost:8000";
 const GOV_KEY = process.env.GOVERNANCE_API_KEY ?? "";
 
@@ -98,3 +125,11 @@ export const getTrace = (
   get(`/audit/reviews/${id}/trace`, true);
 
 export const getHitlQueue = (): Promise<HitlItem[]> => get("/hitl/queue");
+
+export const getDrift = (): Promise<DriftReport> => get("/audit/drift", true);
+
+export const getExplain = (
+  reviewId: string,
+  findingId: string
+): Promise<ExplainResponse> =>
+  get(`/audit/reviews/${reviewId}/explain/${findingId}`, true);

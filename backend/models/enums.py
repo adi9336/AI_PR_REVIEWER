@@ -57,6 +57,8 @@ class EventType(str, Enum):
     DECISION = "decision"
     ESCALATION = "escalation"
     ALERT = "alert"
+    DISPUTE = "dispute"
+    FEEDBACK = "feedback"
 
 
 class Outcome(str, Enum):

@@ -37,6 +37,7 @@ from backend.hitl.queue import list_queued
 from backend.observability.events import get_events_for_review
 from backend.webhook_receiver.router import router as webhook_router
 from backend.api.audit import router as audit_router
+from backend.api.hitl_router import router as hitl_router
 
 app = FastAPI(
     title="AI PR Review Agent",
@@ -49,6 +50,9 @@ app.include_router(webhook_router)
 
 # Mount the governance router (audit + explainability, API-key protected)
 app.include_router(audit_router)
+
+# Mount the HITL actions router (disputes + feedback, API-key protected)
+app.include_router(hitl_router)
 
 
 @app.get("/health")
