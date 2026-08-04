@@ -1,0 +1,81 @@
+# AI PR Review Agent — GCP single-VM stack
+#   api (uvicorn) + worker (arq) + redis + postgres + caddy (auto-HTTPS)
+# Usage: cp .env.example .env && fill secrets && docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: tiger
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d tiger"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../../scripts/migrations:/migrations:ro
+    command: >
+      sh -c "until pg_isready -h postgres -U app -d tiger; do sleep 2; done;
+      psql \"postgresql://app:${POSTGRES_PASSWORD}@postgres:5432/tiger\" -v ON_ERROR_STOP=1 -f /migrations/2026-06-tiger-init.sql"
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: ../..
+    restart: always
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build: ../..
+    restart: always
+    command: ["arq", "backend.job_queue.arq_worker.WorkerSettings"]
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

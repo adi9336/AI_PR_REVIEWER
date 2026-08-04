@@ -1,0 +1,5 @@
+# Caddy reverse proxy — auto-HTTPS via Let's Encrypt.
+# Replace review.example.com with your domain (A record -> VM static IP).
+review.example.com {
+    reverse_proxy api:8000
+}
